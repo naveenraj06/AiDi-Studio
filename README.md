@@ -68,23 +68,25 @@ Edit `apps/api/.env`:
 SUPABASE_URL="https://wpnurprzcqgirtbuqtmj.supabase.co"
 SUPABASE_PUBLISHABLE_KEY="sb_publishable_dIMTpZuPC6_eKH31jM9ISA_pTPnsRCZ"
 SUPABASE_SECRET_KEY="sb_secret_..."   # Project Settings > API > secret key (not the legacy service_role JWT)
+SUPABASE_DB_URL="postgresql://postgres.wpnurprzcqgirtbuqtmj:PASSWORD@aws-0-<region>.pooler.supabase.com:6543/postgres"
 ```
 
-**2. Apply the schema** (one-time, from a machine that can reach `*.supabase.co`
-— this repo's own sandbox environment can't, see below):
+`SUPABASE_DB_URL` is the "Transaction pooler" connection string from Project
+Settings > Database > Connection string, with your database password filled
+in. It's only used by the setup script below, not by the running server.
+
+**2. Apply the schema** (one-time, from a machine that can reach
+`*.supabase.co` — this repo's own sandbox environment can't, see below):
 
 ```bash
-npx supabase login   # or add SUPABASE_ACCESS_TOKEN=sbp_... to apps/api/.env (https://supabase.com/dashboard/account/tokens)
-npm run setup         # from the repo root
+npm run setup   # from the repo root
 ```
 
-`npm run setup` (`scripts/setup-supabase.sh`) reads `apps/api/.env`, derives
-the project ref from `SUPABASE_URL`, checks CLI auth, links, then runs
-`supabase db push` to apply everything in `supabase/migrations/`. It `cd`s to
-the repo root itself, so it's safe to invoke from anywhere. If `supabase link`
-needs the database password non-interactively, add `SUPABASE_DB_PASSWORD=...`
-to `apps/api/.env` too. For verbose CLI output on failure, re-run with
-`SETUP_DEBUG=1 npm run setup`.
+`npm run setup` (`scripts/setup-supabase.js`) reads `apps/api/.env` and
+applies everything in `supabase/migrations/` via a plain Postgres connection
+(`pg`, run through Node) using `SUPABASE_DB_URL` — no Supabase CLI, no login,
+no browser step, no system packages beyond Node. It's idempotent: re-running
+it is a no-op once the schema exists.
 
 Run `npm run setup` once per environment before starting the dev or
 production server for the first time, and again whenever
@@ -102,12 +104,16 @@ Sign up / log in via Supabase (dashboard, `supabase-js`, or the REST
 access token, then call this API with it as `Authorization: Bearer <token>`.
 
 > This repo's own sandbox network policy blocks all outbound traffic to
-> `*.supabase.co`/`*.supabase.com` (confirmed via both direct HTTPS requests
-> and the Supabase CLI itself), so none of the steps above have been run
-> end-to-end from inside it — they're written from the code and schema, not
-> verified live. Everything typechecks and lints clean, and the server boots
-> and correctly rejects unauthenticated/invalid-token requests locally, but
-> a real request against your Supabase project needs to happen from your
+> `*.supabase.co`/`*.supabase.com` (confirmed via direct HTTPS requests and
+> the Supabase CLI itself), so the actual connection to your Supabase project
+> hasn't been exercised from inside it. What *has* been verified for real: the
+> setup script's full apply-and-idempotency logic against a real local
+> Postgres (fresh apply succeeds, re-running is a correct no-op, a missing or
+> wrong `SUPABASE_DB_URL` fails with a clear message) — since it's a plain SQL
+> flow over a Postgres connection, this should behave identically against
+> Supabase's Postgres. Also verified locally: the server boots and correctly rejects
+> unauthenticated/invalid-token requests. Not verified: an actual authenticated
+> request reaching your real Supabase project, which needs to happen from your
 > machine or CI.
 
 ### Routes

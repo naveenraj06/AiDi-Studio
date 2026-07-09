@@ -2,18 +2,19 @@
   "name": "aidi-studio-monorepo",
   "private": true,
   "version": "0.0.0",
+  "type": "module",
   "workspaces": [
     "apps/web",
     "apps/api"
   ],
   "scripts": {
-    "setup": "bash scripts/setup-supabase.sh",
+    "setup": "node scripts/setup-supabase.js",
     "dev:web": "npm run dev --workspace apps/web",
     "dev:api": "npm run dev --workspace apps/api",
     "build:web": "npm run build --workspace apps/web",
     "build:api": "npm run build --workspace apps/api"
   },
   "devDependencies": {
-    "supabase": "^2.10.0"
+    "pg": "^8.13.1"
   }
 }
