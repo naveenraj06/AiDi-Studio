@@ -1,10 +1,10 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { getProjectRole, roleAtLeast } from "../lib/authz.js";
-import { prisma } from "../lib/prisma.js";
-import { serializeWidget } from "../lib/serialize.js";
+import { serializeWidget, type WidgetRow } from "../lib/serialize.js";
+import { supabase } from "../lib/supabase.js";
 
-const WIDGET_INCLUDE = { resource: true } as const;
+const WIDGET_SELECT = "*, resource:api_resources(id, name)";
 
 const createSchema = z.object({
   name: z.string().trim().min(1, "Enter a widget name"),
@@ -26,6 +26,17 @@ const createSchema = z.object({
 
 const updateSchema = createSchema.partial();
 
+function toRow(input: Partial<z.infer<typeof createSchema>>) {
+  const row: Record<string, unknown> = {};
+  if (input.name !== undefined) row.name = input.name;
+  if (input.type !== undefined) row.type = input.type;
+  if (input.isTemplate !== undefined) row.is_template = input.isTemplate;
+  if (input.resourceId !== undefined) row.resource_id = input.resourceId;
+  if (input.mapping !== undefined) row.mapping = input.mapping;
+  if (input.fineTune !== undefined) row.fine_tune = input.fineTune;
+  return row;
+}
+
 export default async function widgetRoutes(app: FastifyInstance) {
   app.addHook("preHandler", app.authenticate);
 
@@ -34,12 +45,14 @@ export default async function widgetRoutes(app: FastifyInstance) {
     const role = await getProjectRole(request.userId, projectId);
     if (!roleAtLeast(role, "viewer")) return reply.code(404).send({ error: "Project not found" });
 
-    const widgets = await prisma.widget.findMany({
-      where: { projectId },
-      include: WIDGET_INCLUDE,
-      orderBy: { updatedAt: "desc" },
-    });
-    return reply.send({ widgets: widgets.map(serializeWidget) });
+    const { data, error } = await supabase
+      .from("widgets")
+      .select(WIDGET_SELECT)
+      .eq("project_id", projectId)
+      .order("updated_at", { ascending: false })
+      .returns<WidgetRow[]>();
+    if (error) return reply.code(500).send({ error: "Failed to load widgets" });
+    return reply.send({ widgets: (data ?? []).map(serializeWidget) });
   });
 
   app.post("/projects/:projectId/widgets", async (request, reply) => {
@@ -51,17 +64,21 @@ export default async function widgetRoutes(app: FastifyInstance) {
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
 
     if (parsed.data.resourceId) {
-      const resource = await prisma.apiResource.findFirst({
-        where: { id: parsed.data.resourceId, projectId },
-      });
+      const { data: resource } = await supabase
+        .from("api_resources")
+        .select("id")
+        .eq("id", parsed.data.resourceId)
+        .eq("project_id", projectId)
+        .maybeSingle();
       if (!resource) return reply.code(400).send({ error: "Resource not found in this project" });
     }
 
-    const { isTemplate, resourceId, mapping, fineTune, ...rest } = parsed.data;
-    const widget = await prisma.widget.create({
-      data: { ...rest, projectId, isTemplate, resourceId, mapping, fineTune },
-      include: WIDGET_INCLUDE,
-    });
+    const { data: widget, error } = await supabase
+      .from("widgets")
+      .insert({ ...toRow(parsed.data), project_id: projectId })
+      .select(WIDGET_SELECT)
+      .single<WidgetRow>();
+    if (error || !widget) return reply.code(500).send({ error: "Failed to create widget" });
     return reply.code(201).send({ widget: serializeWidget(widget) });
   });
 
@@ -73,15 +90,15 @@ export default async function widgetRoutes(app: FastifyInstance) {
     const parsed = updateSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
 
-    const existing = await prisma.widget.findFirst({ where: { id, projectId } });
-    if (!existing) return reply.code(404).send({ error: "Widget not found" });
-
-    const { isTemplate, resourceId, mapping, fineTune, ...rest } = parsed.data;
-    const widget = await prisma.widget.update({
-      where: { id },
-      data: { ...rest, isTemplate, resourceId, mapping, fineTune },
-      include: WIDGET_INCLUDE,
-    });
+    const { data: widget, error } = await supabase
+      .from("widgets")
+      .update({ ...toRow(parsed.data), updated_at: new Date().toISOString() })
+      .eq("id", id)
+      .eq("project_id", projectId)
+      .select(WIDGET_SELECT)
+      .maybeSingle<WidgetRow>();
+    if (error) return reply.code(500).send({ error: "Failed to update widget" });
+    if (!widget) return reply.code(404).send({ error: "Widget not found" });
     return reply.send({ widget: serializeWidget(widget) });
   });
 
@@ -90,8 +107,14 @@ export default async function widgetRoutes(app: FastifyInstance) {
     const role = await getProjectRole(request.userId, projectId);
     if (!roleAtLeast(role, "editor")) return reply.code(404).send({ error: "Project not found" });
 
-    const result = await prisma.widget.deleteMany({ where: { id, projectId } });
-    if (result.count === 0) return reply.code(404).send({ error: "Widget not found" });
+    const { data, error } = await supabase
+      .from("widgets")
+      .delete()
+      .eq("id", id)
+      .eq("project_id", projectId)
+      .select("id");
+    if (error) return reply.code(500).send({ error: "Failed to delete widget" });
+    if (!data || data.length === 0) return reply.code(404).send({ error: "Widget not found" });
     return reply.code(204).send();
   });
 }

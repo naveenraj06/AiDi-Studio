@@ -2,11 +2,11 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { getProjectRole, roleAtLeast } from "../lib/authz.js";
 import { hashPassword, verifyPassword } from "../lib/password.js";
-import { prisma } from "../lib/prisma.js";
-import { serializeDashboard } from "../lib/serialize.js";
+import { serializeDashboard, type DashboardRow } from "../lib/serialize.js";
 import { randomSuffix, slugify } from "../lib/slug.js";
+import { supabase } from "../lib/supabase.js";
 
-const DASHBOARD_INCLUDE = { tiles: { include: { widget: { include: { resource: true } } } } } as const;
+const DASHBOARD_SELECT = "*, dashboard_tiles(widget_id, position, col_span, row_span)";
 
 const createSchema = z.object({
   name: z.string().trim().min(1, "Enter a dashboard name"),
@@ -30,10 +30,12 @@ const tilesSchema = z.object({
 
 async function uniqueSlug(base: string) {
   let slug = slugify(base);
-  while (await prisma.dashboard.findUnique({ where: { slug } })) {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const { data } = await supabase.from("dashboards").select("id").eq("slug", slug).maybeSingle();
+    if (!data) return slug;
     slug = `${slugify(base)}-${randomSuffix()}`;
   }
-  return slug;
+  return `${slugify(base)}-${randomSuffix()}`;
 }
 
 export default async function dashboardRoutes(app: FastifyInstance) {
@@ -44,12 +46,14 @@ export default async function dashboardRoutes(app: FastifyInstance) {
     const role = await getProjectRole(request.userId, projectId);
     if (!roleAtLeast(role, "viewer")) return reply.code(404).send({ error: "Project not found" });
 
-    const dashboards = await prisma.dashboard.findMany({
-      where: { projectId },
-      include: DASHBOARD_INCLUDE,
-      orderBy: { updatedAt: "desc" },
-    });
-    return reply.send({ dashboards: dashboards.map(serializeDashboard) });
+    const { data, error } = await supabase
+      .from("dashboards")
+      .select(DASHBOARD_SELECT)
+      .eq("project_id", projectId)
+      .order("updated_at", { ascending: false })
+      .returns<DashboardRow[]>();
+    if (error) return reply.code(500).send({ error: "Failed to load dashboards" });
+    return reply.send({ dashboards: (data ?? []).map(serializeDashboard) });
   });
 
   app.post("/projects/:projectId/dashboards", async (request, reply) => {
@@ -61,10 +65,12 @@ export default async function dashboardRoutes(app: FastifyInstance) {
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
 
     const slug = await uniqueSlug(parsed.data.name);
-    const dashboard = await prisma.dashboard.create({
-      data: { name: parsed.data.name, slug, projectId },
-      include: DASHBOARD_INCLUDE,
-    });
+    const { data: dashboard, error } = await supabase
+      .from("dashboards")
+      .insert({ name: parsed.data.name, slug, project_id: projectId })
+      .select(DASHBOARD_SELECT)
+      .single<DashboardRow>();
+    if (error || !dashboard) return reply.code(500).send({ error: "Failed to create dashboard" });
     return reply.code(201).send({ dashboard: serializeDashboard(dashboard) });
   });
 
@@ -73,8 +79,13 @@ export default async function dashboardRoutes(app: FastifyInstance) {
     const role = await getProjectRole(request.userId, projectId);
     if (!roleAtLeast(role, "viewer")) return reply.code(404).send({ error: "Project not found" });
 
-    const dashboard = await prisma.dashboard.findFirst({ where: { id, projectId }, include: DASHBOARD_INCLUDE });
-    if (!dashboard) return reply.code(404).send({ error: "Dashboard not found" });
+    const { data: dashboard, error } = await supabase
+      .from("dashboards")
+      .select(DASHBOARD_SELECT)
+      .eq("id", id)
+      .eq("project_id", projectId)
+      .maybeSingle<DashboardRow>();
+    if (error || !dashboard) return reply.code(404).send({ error: "Dashboard not found" });
     return reply.send({ dashboard: serializeDashboard(dashboard) });
   });
 
@@ -86,20 +97,21 @@ export default async function dashboardRoutes(app: FastifyInstance) {
     const parsed = updateSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
 
-    const existing = await prisma.dashboard.findFirst({ where: { id, projectId } });
-    if (!existing) return reply.code(404).send({ error: "Dashboard not found" });
-
     const { sharePassword, ...rest } = parsed.data;
-    const dashboard = await prisma.dashboard.update({
-      where: { id },
-      data: {
-        ...rest,
-        ...(sharePassword !== undefined
-          ? { sharePasswordHash: sharePassword ? await hashPassword(sharePassword) : null }
-          : {}),
-      },
-      include: DASHBOARD_INCLUDE,
-    });
+    const patch: Record<string, unknown> = { ...rest, updated_at: new Date().toISOString() };
+    if (sharePassword !== undefined) {
+      patch.share_password_hash = sharePassword ? await hashPassword(sharePassword) : null;
+    }
+
+    const { data: dashboard, error } = await supabase
+      .from("dashboards")
+      .update(patch)
+      .eq("id", id)
+      .eq("project_id", projectId)
+      .select(DASHBOARD_SELECT)
+      .maybeSingle<DashboardRow>();
+    if (error) return reply.code(500).send({ error: "Failed to update dashboard" });
+    if (!dashboard) return reply.code(404).send({ error: "Dashboard not found" });
     return reply.send({ dashboard: serializeDashboard(dashboard) });
   });
 
@@ -111,30 +123,38 @@ export default async function dashboardRoutes(app: FastifyInstance) {
     const parsed = tilesSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
 
-    const dashboard = await prisma.dashboard.findFirst({ where: { id, projectId } });
+    const { data: dashboard } = await supabase
+      .from("dashboards")
+      .select("id")
+      .eq("id", id)
+      .eq("project_id", projectId)
+      .maybeSingle();
     if (!dashboard) return reply.code(404).send({ error: "Dashboard not found" });
 
     const widgetIds = parsed.data.tiles.map((t) => t.widgetId);
-    const validWidgets = await prisma.widget.count({ where: { id: { in: widgetIds }, projectId } });
-    if (validWidgets !== new Set(widgetIds).size) {
-      return reply.code(400).send({ error: "One or more widgets do not belong to this project" });
+    if (widgetIds.length) {
+      const { count } = await supabase
+        .from("widgets")
+        .select("id", { count: "exact", head: true })
+        .eq("project_id", projectId)
+        .in("id", widgetIds);
+      if ((count ?? 0) !== new Set(widgetIds).size) {
+        return reply.code(400).send({ error: "One or more widgets do not belong to this project" });
+      }
     }
 
-    await prisma.$transaction([
-      prisma.dashboardTile.deleteMany({ where: { dashboardId: id } }),
-      prisma.dashboardTile.createMany({
-        data: parsed.data.tiles.map((tile, index) => ({
-          dashboardId: id,
-          widgetId: tile.widgetId,
-          colSpan: tile.colSpan,
-          rowSpan: tile.rowSpan,
-          position: index,
-        })),
-      }),
-      prisma.dashboard.update({ where: { id }, data: { updatedAt: new Date() } }),
-    ]);
+    const { error: rpcError } = await supabase.rpc("replace_dashboard_tiles", {
+      p_dashboard_id: id,
+      p_tiles: parsed.data.tiles,
+    });
+    if (rpcError) return reply.code(500).send({ error: "Failed to update dashboard layout" });
 
-    const updated = await prisma.dashboard.findUniqueOrThrow({ where: { id }, include: DASHBOARD_INCLUDE });
+    const { data: updated, error } = await supabase
+      .from("dashboards")
+      .select(DASHBOARD_SELECT)
+      .eq("id", id)
+      .single<DashboardRow>();
+    if (error || !updated) return reply.code(500).send({ error: "Failed to load updated dashboard" });
     return reply.send({ dashboard: serializeDashboard(updated) });
   });
 
@@ -143,8 +163,14 @@ export default async function dashboardRoutes(app: FastifyInstance) {
     const role = await getProjectRole(request.userId, projectId);
     if (!roleAtLeast(role, "editor")) return reply.code(404).send({ error: "Project not found" });
 
-    const result = await prisma.dashboard.deleteMany({ where: { id, projectId } });
-    if (result.count === 0) return reply.code(404).send({ error: "Dashboard not found" });
+    const { data, error } = await supabase
+      .from("dashboards")
+      .delete()
+      .eq("id", id)
+      .eq("project_id", projectId)
+      .select("id");
+    if (error) return reply.code(500).send({ error: "Failed to delete dashboard" });
+    if (!data || data.length === 0) return reply.code(404).send({ error: "Dashboard not found" });
     return reply.code(204).send();
   });
 }
@@ -157,13 +183,17 @@ export async function publicDashboardRoutes(app: FastifyInstance) {
     const parsed = publicPasswordSchema.safeParse(request.query);
     const password = parsed.success ? parsed.data.password : undefined;
 
-    const dashboard = await prisma.dashboard.findUnique({ where: { slug }, include: DASHBOARD_INCLUDE });
-    if (!dashboard || dashboard.status !== "published") {
+    const { data: dashboard, error } = await supabase
+      .from("dashboards")
+      .select(DASHBOARD_SELECT)
+      .eq("slug", slug)
+      .maybeSingle<DashboardRow>();
+    if (error || !dashboard || dashboard.status !== "published") {
       return reply.code(404).send({ error: "Dashboard not found" });
     }
 
-    if (dashboard.sharePasswordHash) {
-      if (!password || !(await verifyPassword(password, dashboard.sharePasswordHash))) {
+    if (dashboard.share_password_hash) {
+      if (!password || !(await verifyPassword(password, dashboard.share_password_hash))) {
         return reply.code(401).send({ error: "Password required", locked: true });
       }
     }

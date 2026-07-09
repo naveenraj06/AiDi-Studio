@@ -1,8 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { getProjectRole, roleAtLeast } from "../lib/authz.js";
-import { prisma } from "../lib/prisma.js";
-import { serializeTeamMember } from "../lib/serialize.js";
+import { serializeTeamMember, type TeamMemberRow } from "../lib/serialize.js";
+import { supabase } from "../lib/supabase.js";
 
 const inviteSchema = z.object({
   name: z.string().trim().min(1, "Enter a name"),
@@ -22,8 +22,14 @@ export default async function teamRoutes(app: FastifyInstance) {
     const role = await getProjectRole(request.userId, projectId);
     if (!roleAtLeast(role, "viewer")) return reply.code(404).send({ error: "Project not found" });
 
-    const members = await prisma.projectMember.findMany({ where: { projectId }, orderBy: { invitedAt: "asc" } });
-    return reply.send({ team: members.map(serializeTeamMember) });
+    const { data, error } = await supabase
+      .from("project_members")
+      .select("*")
+      .eq("project_id", projectId)
+      .order("invited_at", { ascending: true })
+      .returns<TeamMemberRow[]>();
+    if (error) return reply.code(500).send({ error: "Failed to load team" });
+    return reply.send({ team: (data ?? []).map(serializeTeamMember) });
   });
 
   app.post("/projects/:projectId/team", async (request, reply) => {
@@ -34,15 +40,15 @@ export default async function teamRoutes(app: FastifyInstance) {
     const parsed = inviteSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
 
-    const existing = await prisma.projectMember.findUnique({
-      where: { projectId_email: { projectId, email: parsed.data.email } },
-    });
-    if (existing) return reply.code(409).send({ error: "That person is already on the team" });
-
-    const linkedUser = await prisma.user.findUnique({ where: { email: parsed.data.email } });
-    const member = await prisma.projectMember.create({
-      data: { ...parsed.data, projectId, userId: linkedUser?.id },
-    });
+    const { data: member, error } = await supabase
+      .from("project_members")
+      .insert({ project_id: projectId, name: parsed.data.name, email: parsed.data.email, role: parsed.data.role })
+      .select("*")
+      .single<TeamMemberRow>();
+    if (error) {
+      if (error.code === "23505") return reply.code(409).send({ error: "That person is already on the team" });
+      return reply.code(500).send({ error: "Failed to invite team member" });
+    }
     return reply.code(201).send({ member: serializeTeamMember(member) });
   });
 
@@ -54,15 +60,30 @@ export default async function teamRoutes(app: FastifyInstance) {
     const parsed = updateSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
 
-    const target = await prisma.projectMember.findFirst({ where: { id, projectId } });
+    const { data: target } = await supabase
+      .from("project_members")
+      .select("role")
+      .eq("id", id)
+      .eq("project_id", projectId)
+      .maybeSingle();
     if (!target) return reply.code(404).send({ error: "Team member not found" });
 
     if (target.role === "owner" && parsed.data.role !== "owner") {
-      const ownerCount = await prisma.projectMember.count({ where: { projectId, role: "owner" } });
-      if (ownerCount <= 1) return reply.code(400).send({ error: "A project must have at least one owner" });
+      const { count } = await supabase
+        .from("project_members")
+        .select("id", { count: "exact", head: true })
+        .eq("project_id", projectId)
+        .eq("role", "owner");
+      if ((count ?? 0) <= 1) return reply.code(400).send({ error: "A project must have at least one owner" });
     }
 
-    const member = await prisma.projectMember.update({ where: { id }, data: { role: parsed.data.role } });
+    const { data: member, error } = await supabase
+      .from("project_members")
+      .update({ role: parsed.data.role })
+      .eq("id", id)
+      .select("*")
+      .single<TeamMemberRow>();
+    if (error || !member) return reply.code(500).send({ error: "Failed to update team member" });
     return reply.send({ member: serializeTeamMember(member) });
   });
 
@@ -71,11 +92,17 @@ export default async function teamRoutes(app: FastifyInstance) {
     const role = await getProjectRole(request.userId, projectId);
     if (!roleAtLeast(role, "owner")) return reply.code(404).send({ error: "Project not found" });
 
-    const target = await prisma.projectMember.findFirst({ where: { id, projectId } });
+    const { data: target } = await supabase
+      .from("project_members")
+      .select("role")
+      .eq("id", id)
+      .eq("project_id", projectId)
+      .maybeSingle();
     if (!target) return reply.code(404).send({ error: "Team member not found" });
     if (target.role === "owner") return reply.code(400).send({ error: "Remove another owner first" });
 
-    await prisma.projectMember.delete({ where: { id } });
+    const { error } = await supabase.from("project_members").delete().eq("id", id);
+    if (error) return reply.code(500).send({ error: "Failed to remove team member" });
     return reply.code(204).send();
   });
 }

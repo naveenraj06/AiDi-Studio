@@ -1,0 +1,2605 @@
+diff --git a/README.md b/README.md
+index 75e00d2..4cecbcb 100644
+--- a/README.md
++++ b/README.md
+@@ -1,43 +1,111 @@
+ # AiDi Studio
+ 
+-Monorepo with two workspaces:
++Monorepo:
+ 
+ ```
+-apps/web/   React + Vite frontend (see apps/web/README.md)
+-apps/api/   Fastify + TypeScript + Postgres backend
++apps/web/            React + Vite frontend (see apps/web/README.md)
++apps/api/             Fastify + TypeScript backend
++supabase/migrations/  SQL schema + RPC functions applied to the Supabase project
+ ```
+ 
+ ## Backend (`apps/api`)
+ 
+-Real auth (JWT + DB-backed sessions, bcrypt) and CRUD for Projects, API Resources,
+-Widgets, Dashboards, Team, and Billing, backed by Postgres via Prisma.
++The backend runs entirely on **Supabase**: Supabase Auth for signup/login/sessions,
++and Supabase's Postgres for data, queried over its auto-generated REST API
++(PostgREST) via `@supabase/supabase-js` — no Prisma, no direct Postgres
++connection string. Fastify owns CRUD for Projects, API Resources, Widgets,
++Dashboards, Team, and Billing, and enforces project-role authorization
++(`owner` > `editor` > `viewer`) in application code before every query.
++
++### How auth works
++
++- The frontend talks to Supabase directly (`@supabase/supabase-js`) for signup,
++  login, logout, password reset, etc., and gets back a Supabase access token.
++- That token is sent to this API as `Authorization: Bearer <token>` on every
++  authenticated request.
++- `src/plugins/supabaseAuth.ts` verifies it by calling Supabase's
++  `GET /auth/v1/user` with the project's anon key — no shared JWT secret needed
++  on this server. A 200 response means the token is valid; the returned user's
++  `id`/`email` become `request.userId`/`request.userEmail`.
++- There's no local `users` table — `projects.owner_id` and
++  `project_members.user_id` are plain `auth.users.id` UUIDs, with a real FK to
++  `auth.users` (see `supabase/migrations/`).
++- Team invites: `POST /projects/:id/team` creates a `project_members` row keyed
++  by email with `user_id: null`. The next time that person authenticates (any
++  request), the auth plugin auto-links their Supabase user id to any pending
++  invite matching their email.
++
++### How data access works
++
++- `src/lib/supabase.ts` creates a Supabase client with the **service-role
++  key**, which bypasses Row Level Security — this API is the trusted backend
++  and does its own authorization (`src/lib/authz.ts`) before every query, so
++  RLS is enabled on every table as a deny-by-default backstop but has no
++  permissive policies.
++- Most routes are plain PostgREST calls (`supabase.from("widgets").select(...)`,
++  `.insert(...)`, etc.).
++- Two operations need real cross-table atomicity that a single PostgREST
++  request can't express, so they're Postgres functions called via `.rpc(...)`:
++  - `create_project` — inserts the project, the owner's `project_members` row,
++    and its `billing` row together.
++  - `replace_dashboard_tiles` — replaces a dashboard's tile layout (delete +
++    reinsert) and bumps `updated_at` in one transaction.
+ 
+ ### Setup
+ 
++Project: `wpnurprzcqgirtbuqtmj` (`https://wpnurprzcqgirtbuqtmj.supabase.co`).
++
++**1. Apply the schema** (one-time, from a machine that can reach `*.supabase.co`
++— this repo's own sandbox environment can't, see below):
++
++```bash
++npx supabase login                                    # or: export SUPABASE_ACCESS_TOKEN=sbp_...
++npx supabase link --project-ref wpnurprzcqgirtbuqtmj
++npm run setup                                          # = supabase db push, applies supabase/migrations/*
++```
++
++**2. Configure the API:**
++
+ ```bash
+ cd apps/api
+-cp .env.example .env   # point DATABASE_URL at your Postgres instance
++cp .env.example .env
++```
++
++Edit `.env`:
++
++```bash
++SUPABASE_URL="https://wpnurprzcqgirtbuqtmj.supabase.co"
++SUPABASE_ANON_KEY="sb_publishable_dIMTpZuPC6_eKH31jM9ISA_pTPnsRCZ"
++SUPABASE_SERVICE_ROLE_KEY="..."   # Project Settings > API > service_role secret
++```
++
++**3. Run it:**
++
++```bash
+ npm install
+-npm run prisma:migrate  # applies schema, generates Prisma client
+-npm run prisma:seed     # optional: creates demo@aidistudio.dev / password123
+-npm run dev              # http://localhost:4000
++npm run dev    # http://localhost:4000
+ ```
+ 
+-### Auth flow
++Run `npm run setup` (from the repo root) once per environment before starting
++the dev or production server for the first time, and again whenever
++`supabase/migrations/` changes.
+ 
+-There's no email provider wired up yet, so verification and password-reset links
+-are logged to the server console and — outside `NODE_ENV=production` — also
+-returned directly in the API response (`verification_token` / `reset_token`), so
+-you can drive the flow without SMTP:
++Sign up / log in via Supabase (dashboard, `supabase-js`, or the REST
++`/auth/v1/signup` and `/auth/v1/token?grant_type=password` endpoints) to get an
++access token, then call this API with it as `Authorization: Bearer <token>`.
+ 
+-1. `POST /auth/signup` → creates an unverified user, returns a verification token
+-2. `POST /auth/verify-email { token }` → verifies the user, returns a session `access_token`
+-3. `POST /auth/login { email, password }` → requires a verified email, returns `access_token`
+-4. All authenticated routes take `Authorization: Bearer <access_token>`
++> This repo's own sandbox network policy blocks all outbound traffic to
++> `*.supabase.co`/`*.supabase.com` (confirmed via both direct HTTPS requests
++> and the Supabase CLI itself), so none of the steps above have been run
++> end-to-end from inside it — they're written from the code and schema, not
++> verified live. Everything typechecks and lints clean, and the server boots
++> and correctly rejects unauthenticated/invalid-token requests locally, but
++> a real request against your Supabase project needs to happen from your
++> machine or CI.
+ 
+ ### Routes
+ 
+-- `POST /auth/signup|login|logout|logout-all|verify-email|resend-verification|forgot-password|reset-password`, `GET /auth/me`
++- `GET /auth/me` — echoes the verified Supabase user (id/email/name)
+ - `GET|POST /projects`, `GET|PATCH|DELETE /projects/:id`
+ - `GET|POST /projects/:projectId/resources`, `PATCH|DELETE /projects/:projectId/resources/:id`, `POST .../resources/:id/test-connection`
+ - `GET|POST /projects/:projectId/widgets`, `PATCH|DELETE /projects/:projectId/widgets/:id`
+@@ -46,15 +114,15 @@ you can drive the flow without SMTP:
+ - `GET|POST /projects/:projectId/team`, `PATCH|DELETE /projects/:projectId/team/:id`
+ - `GET|PATCH /projects/:projectId/billing`
+ 
+-Authorization is role-based per project (`owner` > `editor` > `viewer`), derived
+-from project ownership or `ProjectMember` rows.
+-
+ ### Out of scope for this milestone
+ 
+-No Stripe integration (billing endpoints just persist plan/seat records), no real
+-email delivery, no TOTP/2FA verification, no LLM-backed widget suggestions — the
+-frontend's `suggestFor.ts` heuristic isn't reproduced server-side. `apps/web/src/context/AppContext.tsx`
+-is still on in-memory mock data; wiring it to this API is the next step.
++No Stripe integration (billing endpoints just persist plan/seat records), no
++TOTP/2FA, no LLM-backed widget suggestions — the frontend's `suggestFor.ts`
++heuristic isn't reproduced server-side. `apps/web/src/context/AppContext.tsx`
++is still on in-memory mock data and doesn't call Supabase or this API yet;
++wiring it up (installing `@supabase/supabase-js`, replacing the mock
++login/signup/session logic, and pointing CRUD actions at this API) is the
++next step.
+ 
+ ## Frontend (`apps/web`)
+ 
+diff --git a/apps/api/.env.example b/apps/api/.env.example
+index 209de73..d808d5f 100644
+--- a/apps/api/.env.example
++++ b/apps/api/.env.example
+@@ -1,4 +1,5 @@
+-DATABASE_URL="postgresql://postgres:postgres@localhost:5432/aidi_studio"
+-JWT_SECRET="change-me-in-production"
++SUPABASE_URL="https://your-project-ref.supabase.co"
++SUPABASE_ANON_KEY="your-anon-or-publishable-key"
++SUPABASE_SERVICE_ROLE_KEY="your-service-role-secret-key"
+ PORT=4000
+ CORS_ORIGIN="http://localhost:5173"
+diff --git a/apps/api/package.json b/apps/api/package.json
+index b0fc346..b3886ed 100644
+--- a/apps/api/package.json
++++ b/apps/api/package.json
+@@ -7,16 +7,11 @@
+     "dev": "tsx watch --env-file=.env src/server.ts",
+     "build": "tsc -p tsconfig.json",
+     "start": "node --env-file=.env dist/server.js",
+-    "lint": "oxlint",
+-    "prisma:generate": "prisma generate",
+-    "prisma:migrate": "prisma migrate dev",
+-    "prisma:deploy": "prisma migrate deploy",
+-    "prisma:seed": "tsx prisma/seed.ts"
++    "lint": "oxlint"
+   },
+   "dependencies": {
+     "@fastify/cors": "^10.1.0",
+-    "@fastify/jwt": "^10.2.0",
+-    "@prisma/client": "^6.19.0",
++    "@supabase/supabase-js": "^2.48.1",
+     "bcryptjs": "^2.4.3",
+     "fastify": "^5.6.1",
+     "fastify-plugin": "^5.1.0",
+@@ -26,7 +21,6 @@
+     "@types/bcryptjs": "^2.4.6",
+     "@types/node": "^24.13.3",
+     "oxlint": "^1.71.0",
+-    "prisma": "^6.19.0",
+     "tsx": "^4.19.2",
+     "typescript": "~5.9.3"
+   }
+diff --git a/apps/api/prisma/migrations/20260709183741_init/migration.sql b/apps/api/prisma/migrations/20260709183741_init/migration.sql
+deleted file mode 100644
+index 0140a02..0000000
+--- a/apps/api/prisma/migrations/20260709183741_init/migration.sql
++++ /dev/null
+@@ -1,293 +0,0 @@
+--- CreateEnum
+-CREATE TYPE "Plan" AS ENUM ('free', 'pro', 'team', 'enterprise');
+-
+--- CreateEnum
+-CREATE TYPE "ProjectRole" AS ENUM ('owner', 'editor', 'viewer');
+-
+--- CreateEnum
+-CREATE TYPE "AuthType" AS ENUM ('bearer', 'api_key', 'oauth', 'none');
+-
+--- CreateEnum
+-CREATE TYPE "ResourceStatus" AS ENUM ('healthy', 'error');
+-
+--- CreateEnum
+-CREATE TYPE "ImportedFrom" AS ENUM ('postman', 'openapi', 'curl', 'manual');
+-
+--- CreateEnum
+-CREATE TYPE "WidgetType" AS ENUM ('line', 'bar', 'stat', 'table', 'donut', 'map');
+-
+--- CreateEnum
+-CREATE TYPE "DashboardStatus" AS ENUM ('draft', 'published');
+-
+--- CreateEnum
+-CREATE TYPE "InvoiceStatus" AS ENUM ('paid', 'failed');
+-
+--- CreateEnum
+-CREATE TYPE "BillingStatus" AS ENUM ('active', 'past_due', 'canceled', 'trialing');
+-
+--- CreateTable
+-CREATE TABLE "User" (
+-    "id" TEXT NOT NULL,
+-    "email" TEXT NOT NULL,
+-    "passwordHash" TEXT NOT NULL,
+-    "displayName" TEXT NOT NULL,
+-    "emailVerified" BOOLEAN NOT NULL DEFAULT false,
+-    "totpEnabled" BOOLEAN NOT NULL DEFAULT false,
+-    "totpSecret" TEXT,
+-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+-    "updatedAt" TIMESTAMP(3) NOT NULL,
+-
+-    CONSTRAINT "User_pkey" PRIMARY KEY ("id")
+-);
+-
+--- CreateTable
+-CREATE TABLE "Session" (
+-    "id" TEXT NOT NULL,
+-    "userId" TEXT NOT NULL,
+-    "tokenHash" TEXT NOT NULL,
+-    "userAgent" TEXT,
+-    "ip" TEXT,
+-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+-    "expiresAt" TIMESTAMP(3) NOT NULL,
+-    "revokedAt" TIMESTAMP(3),
+-
+-    CONSTRAINT "Session_pkey" PRIMARY KEY ("id")
+-);
+-
+--- CreateTable
+-CREATE TABLE "EmailVerificationToken" (
+-    "id" TEXT NOT NULL,
+-    "userId" TEXT NOT NULL,
+-    "tokenHash" TEXT NOT NULL,
+-    "expiresAt" TIMESTAMP(3) NOT NULL,
+-    "usedAt" TIMESTAMP(3),
+-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+-
+-    CONSTRAINT "EmailVerificationToken_pkey" PRIMARY KEY ("id")
+-);
+-
+--- CreateTable
+-CREATE TABLE "PasswordResetToken" (
+-    "id" TEXT NOT NULL,
+-    "userId" TEXT NOT NULL,
+-    "tokenHash" TEXT NOT NULL,
+-    "expiresAt" TIMESTAMP(3) NOT NULL,
+-    "usedAt" TIMESTAMP(3),
+-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+-
+-    CONSTRAINT "PasswordResetToken_pkey" PRIMARY KEY ("id")
+-);
+-
+--- CreateTable
+-CREATE TABLE "Project" (
+-    "id" TEXT NOT NULL,
+-    "name" TEXT NOT NULL,
+-    "icon" TEXT NOT NULL DEFAULT 'box',
+-    "color" TEXT NOT NULL DEFAULT '#7C5CFC',
+-    "plan" "Plan" NOT NULL DEFAULT 'free',
+-    "ownerId" TEXT NOT NULL,
+-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+-    "updatedAt" TIMESTAMP(3) NOT NULL,
+-
+-    CONSTRAINT "Project_pkey" PRIMARY KEY ("id")
+-);
+-
+--- CreateTable
+-CREATE TABLE "ProjectMember" (
+-    "id" TEXT NOT NULL,
+-    "projectId" TEXT NOT NULL,
+-    "userId" TEXT,
+-    "name" TEXT NOT NULL,
+-    "email" TEXT NOT NULL,
+-    "role" "ProjectRole" NOT NULL DEFAULT 'viewer',
+-    "invitedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+-
+-    CONSTRAINT "ProjectMember_pkey" PRIMARY KEY ("id")
+-);
+-
+--- CreateTable
+-CREATE TABLE "ApiResource" (
+-    "id" TEXT NOT NULL,
+-    "projectId" TEXT NOT NULL,
+-    "name" TEXT NOT NULL,
+-    "url" TEXT NOT NULL,
+-    "method" TEXT NOT NULL DEFAULT 'GET',
+-    "authType" "AuthType" NOT NULL DEFAULT 'none',
+-    "authCredential" TEXT,
+-    "status" "ResourceStatus" NOT NULL DEFAULT 'healthy',
+-    "lastTestedAt" TIMESTAMP(3),
+-    "lastTestLatencyMs" INTEGER,
+-    "importedFrom" "ImportedFrom" NOT NULL DEFAULT 'manual',
+-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+-    "updatedAt" TIMESTAMP(3) NOT NULL,
+-
+-    CONSTRAINT "ApiResource_pkey" PRIMARY KEY ("id")
+-);
+-
+--- CreateTable
+-CREATE TABLE "Widget" (
+-    "id" TEXT NOT NULL,
+-    "projectId" TEXT NOT NULL,
+-    "name" TEXT NOT NULL,
+-    "type" "WidgetType" NOT NULL,
+-    "isTemplate" BOOLEAN NOT NULL DEFAULT false,
+-    "resourceId" TEXT,
+-    "mapping" JSONB,
+-    "fineTune" JSONB,
+-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+-    "updatedAt" TIMESTAMP(3) NOT NULL,
+-
+-    CONSTRAINT "Widget_pkey" PRIMARY KEY ("id")
+-);
+-
+--- CreateTable
+-CREATE TABLE "Dashboard" (
+-    "id" TEXT NOT NULL,
+-    "projectId" TEXT NOT NULL,
+-    "name" TEXT NOT NULL,
+-    "slug" TEXT NOT NULL,
+-    "status" "DashboardStatus" NOT NULL DEFAULT 'draft',
+-    "sharePasswordHash" TEXT,
+-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+-    "updatedAt" TIMESTAMP(3) NOT NULL,
+-
+-    CONSTRAINT "Dashboard_pkey" PRIMARY KEY ("id")
+-);
+-
+--- CreateTable
+-CREATE TABLE "DashboardTile" (
+-    "id" TEXT NOT NULL,
+-    "dashboardId" TEXT NOT NULL,
+-    "widgetId" TEXT NOT NULL,
+-    "position" INTEGER NOT NULL DEFAULT 0,
+-    "colSpan" INTEGER NOT NULL DEFAULT 1,
+-    "rowSpan" INTEGER NOT NULL DEFAULT 1,
+-
+-    CONSTRAINT "DashboardTile_pkey" PRIMARY KEY ("id")
+-);
+-
+--- CreateTable
+-CREATE TABLE "Billing" (
+-    "id" TEXT NOT NULL,
+-    "projectId" TEXT NOT NULL,
+-    "plan" "Plan" NOT NULL DEFAULT 'free',
+-    "status" "BillingStatus" NOT NULL DEFAULT 'active',
+-    "seats" INTEGER NOT NULL DEFAULT 1,
+-    "pricePerSeat" INTEGER NOT NULL DEFAULT 0,
+-    "currentPeriodEnd" TIMESTAMP(3),
+-    "cardBrand" TEXT,
+-    "cardLast4" TEXT,
+-    "cardExp" TEXT,
+-
+-    CONSTRAINT "Billing_pkey" PRIMARY KEY ("id")
+-);
+-
+--- CreateTable
+-CREATE TABLE "Invoice" (
+-    "id" TEXT NOT NULL,
+-    "billingId" TEXT NOT NULL,
+-    "date" TIMESTAMP(3) NOT NULL,
+-    "amount" INTEGER NOT NULL,
+-    "status" "InvoiceStatus" NOT NULL,
+-
+-    CONSTRAINT "Invoice_pkey" PRIMARY KEY ("id")
+-);
+-
+--- CreateIndex
+-CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
+-
+--- CreateIndex
+-CREATE UNIQUE INDEX "Session_tokenHash_key" ON "Session"("tokenHash");
+-
+--- CreateIndex
+-CREATE INDEX "Session_userId_idx" ON "Session"("userId");
+-
+--- CreateIndex
+-CREATE UNIQUE INDEX "EmailVerificationToken_tokenHash_key" ON "EmailVerificationToken"("tokenHash");
+-
+--- CreateIndex
+-CREATE INDEX "EmailVerificationToken_userId_idx" ON "EmailVerificationToken"("userId");
+-
+--- CreateIndex
+-CREATE UNIQUE INDEX "PasswordResetToken_tokenHash_key" ON "PasswordResetToken"("tokenHash");
+-
+--- CreateIndex
+-CREATE INDEX "PasswordResetToken_userId_idx" ON "PasswordResetToken"("userId");
+-
+--- CreateIndex
+-CREATE INDEX "Project_ownerId_idx" ON "Project"("ownerId");
+-
+--- CreateIndex
+-CREATE INDEX "ProjectMember_userId_idx" ON "ProjectMember"("userId");
+-
+--- CreateIndex
+-CREATE UNIQUE INDEX "ProjectMember_projectId_email_key" ON "ProjectMember"("projectId", "email");
+-
+--- CreateIndex
+-CREATE INDEX "ApiResource_projectId_idx" ON "ApiResource"("projectId");
+-
+--- CreateIndex
+-CREATE INDEX "Widget_projectId_idx" ON "Widget"("projectId");
+-
+--- CreateIndex
+-CREATE INDEX "Widget_resourceId_idx" ON "Widget"("resourceId");
+-
+--- CreateIndex
+-CREATE UNIQUE INDEX "Dashboard_slug_key" ON "Dashboard"("slug");
+-
+--- CreateIndex
+-CREATE INDEX "Dashboard_projectId_idx" ON "Dashboard"("projectId");
+-
+--- CreateIndex
+-CREATE INDEX "DashboardTile_dashboardId_idx" ON "DashboardTile"("dashboardId");
+-
+--- CreateIndex
+-CREATE INDEX "DashboardTile_widgetId_idx" ON "DashboardTile"("widgetId");
+-
+--- CreateIndex
+-CREATE UNIQUE INDEX "Billing_projectId_key" ON "Billing"("projectId");
+-
+--- CreateIndex
+-CREATE INDEX "Invoice_billingId_idx" ON "Invoice"("billingId");
+-
+--- AddForeignKey
+-ALTER TABLE "Session" ADD CONSTRAINT "Session_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+-
+--- AddForeignKey
+-ALTER TABLE "EmailVerificationToken" ADD CONSTRAINT "EmailVerificationToken_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+-
+--- AddForeignKey
+-ALTER TABLE "PasswordResetToken" ADD CONSTRAINT "PasswordResetToken_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+-
+--- AddForeignKey
+-ALTER TABLE "Project" ADD CONSTRAINT "Project_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+-
+--- AddForeignKey
+-ALTER TABLE "ProjectMember" ADD CONSTRAINT "ProjectMember_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+-
+--- AddForeignKey
+-ALTER TABLE "ProjectMember" ADD CONSTRAINT "ProjectMember_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+-
+--- AddForeignKey
+-ALTER TABLE "ApiResource" ADD CONSTRAINT "ApiResource_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+-
+--- AddForeignKey
+-ALTER TABLE "Widget" ADD CONSTRAINT "Widget_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+-
+--- AddForeignKey
+-ALTER TABLE "Widget" ADD CONSTRAINT "Widget_resourceId_fkey" FOREIGN KEY ("resourceId") REFERENCES "ApiResource"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+-
+--- AddForeignKey
+-ALTER TABLE "Dashboard" ADD CONSTRAINT "Dashboard_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+-
+--- AddForeignKey
+-ALTER TABLE "DashboardTile" ADD CONSTRAINT "DashboardTile_dashboardId_fkey" FOREIGN KEY ("dashboardId") REFERENCES "Dashboard"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+-
+--- AddForeignKey
+-ALTER TABLE "DashboardTile" ADD CONSTRAINT "DashboardTile_widgetId_fkey" FOREIGN KEY ("widgetId") REFERENCES "Widget"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+-
+--- AddForeignKey
+-ALTER TABLE "Billing" ADD CONSTRAINT "Billing_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+-
+--- AddForeignKey
+-ALTER TABLE "Invoice" ADD CONSTRAINT "Invoice_billingId_fkey" FOREIGN KEY ("billingId") REFERENCES "Billing"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+diff --git a/apps/api/prisma/migrations/migration_lock.toml b/apps/api/prisma/migrations/migration_lock.toml
+deleted file mode 100644
+index 044d57c..0000000
+--- a/apps/api/prisma/migrations/migration_lock.toml
++++ /dev/null
+@@ -1,3 +0,0 @@
+-# Please do not edit this file manually
+-# It should be added in your version-control system (e.g., Git)
+-provider = "postgresql"
+diff --git a/apps/api/prisma/schema.prisma b/apps/api/prisma/schema.prisma
+deleted file mode 100644
+index a415334..0000000
+--- a/apps/api/prisma/schema.prisma
++++ /dev/null
+@@ -1,255 +0,0 @@
+-generator client {
+-  provider = "prisma-client-js"
+-}
+-
+-datasource db {
+-  provider = "postgresql"
+-  url      = env("DATABASE_URL")
+-}
+-
+-enum Plan {
+-  free
+-  pro
+-  team
+-  enterprise
+-}
+-
+-enum ProjectRole {
+-  owner
+-  editor
+-  viewer
+-}
+-
+-enum AuthType {
+-  bearer
+-  api_key
+-  oauth
+-  none
+-}
+-
+-enum ResourceStatus {
+-  healthy
+-  error
+-}
+-
+-enum ImportedFrom {
+-  postman
+-  openapi
+-  curl
+-  manual
+-}
+-
+-enum WidgetType {
+-  line
+-  bar
+-  stat
+-  table
+-  donut
+-  map
+-}
+-
+-enum DashboardStatus {
+-  draft
+-  published
+-}
+-
+-enum InvoiceStatus {
+-  paid
+-  failed
+-}
+-
+-enum BillingStatus {
+-  active
+-  past_due
+-  canceled
+-  trialing
+-}
+-
+-model User {
+-  id              String    @id @default(uuid())
+-  email           String    @unique
+-  passwordHash    String
+-  displayName     String
+-  emailVerified   Boolean   @default(false)
+-  totpEnabled     Boolean   @default(false)
+-  totpSecret      String?
+-  createdAt       DateTime  @default(now())
+-  updatedAt       DateTime  @updatedAt
+-
+-  ownedProjects       Project[]                @relation("ProjectOwner")
+-  memberships         ProjectMember[]
+-  sessions            Session[]
+-  emailVerifications  EmailVerificationToken[]
+-  passwordResets      PasswordResetToken[]
+-}
+-
+-model Session {
+-  id         String    @id @default(uuid())
+-  userId     String
+-  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+-  tokenHash  String    @unique
+-  userAgent  String?
+-  ip         String?
+-  createdAt  DateTime  @default(now())
+-  expiresAt  DateTime
+-  revokedAt  DateTime?
+-
+-  @@index([userId])
+-}
+-
+-model EmailVerificationToken {
+-  id         String   @id @default(uuid())
+-  userId     String
+-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+-  tokenHash  String   @unique
+-  expiresAt  DateTime
+-  usedAt     DateTime?
+-  createdAt  DateTime @default(now())
+-
+-  @@index([userId])
+-}
+-
+-model PasswordResetToken {
+-  id         String   @id @default(uuid())
+-  userId     String
+-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+-  tokenHash  String   @unique
+-  expiresAt  DateTime
+-  usedAt     DateTime?
+-  createdAt  DateTime @default(now())
+-
+-  @@index([userId])
+-}
+-
+-model Project {
+-  id         String   @id @default(uuid())
+-  name       String
+-  icon       String   @default("box")
+-  color      String   @default("#7C5CFC")
+-  plan       Plan     @default(free)
+-  ownerId    String
+-  owner      User     @relation("ProjectOwner", fields: [ownerId], references: [id])
+-  createdAt  DateTime @default(now())
+-  updatedAt  DateTime @updatedAt
+-
+-  members    ProjectMember[]
+-  resources  ApiResource[]
+-  widgets    Widget[]
+-  dashboards Dashboard[]
+-  billing    Billing?
+-
+-  @@index([ownerId])
+-}
+-
+-model ProjectMember {
+-  id         String      @id @default(uuid())
+-  projectId  String
+-  project    Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+-  userId     String?
+-  user       User?       @relation(fields: [userId], references: [id])
+-  name       String
+-  email      String
+-  role       ProjectRole @default(viewer)
+-  invitedAt  DateTime    @default(now())
+-
+-  @@unique([projectId, email])
+-  @@index([userId])
+-}
+-
+-model ApiResource {
+-  id                  String         @id @default(uuid())
+-  projectId           String
+-  project             Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+-  name                String
+-  url                 String
+-  method              String         @default("GET")
+-  authType            AuthType       @default(none)
+-  authCredential      String?
+-  status              ResourceStatus @default(healthy)
+-  lastTestedAt         DateTime?
+-  lastTestLatencyMs    Int?
+-  importedFrom         ImportedFrom  @default(manual)
+-  createdAt            DateTime      @default(now())
+-  updatedAt            DateTime      @updatedAt
+-
+-  widgets              Widget[]
+-
+-  @@index([projectId])
+-}
+-
+-model Widget {
+-  id           String     @id @default(uuid())
+-  projectId    String
+-  project      Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+-  name         String
+-  type         WidgetType
+-  isTemplate   Boolean    @default(false)
+-  resourceId   String?
+-  resource     ApiResource? @relation(fields: [resourceId], references: [id], onDelete: SetNull)
+-  mapping      Json?
+-  fineTune     Json?
+-  createdAt    DateTime   @default(now())
+-  updatedAt    DateTime   @updatedAt
+-
+-  tiles        DashboardTile[]
+-
+-  @@index([projectId])
+-  @@index([resourceId])
+-}
+-
+-model Dashboard {
+-  id                 String          @id @default(uuid())
+-  projectId          String
+-  project            Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+-  name               String
+-  slug               String          @unique
+-  status             DashboardStatus @default(draft)
+-  sharePasswordHash  String?
+-  createdAt          DateTime        @default(now())
+-  updatedAt          DateTime        @updatedAt
+-
+-  tiles              DashboardTile[]
+-
+-  @@index([projectId])
+-}
+-
+-model DashboardTile {
+-  id           String    @id @default(uuid())
+-  dashboardId  String
+-  dashboard    Dashboard @relation(fields: [dashboardId], references: [id], onDelete: Cascade)
+-  widgetId     String
+-  widget       Widget    @relation(fields: [widgetId], references: [id], onDelete: Cascade)
+-  position     Int       @default(0)
+-  colSpan      Int       @default(1)
+-  rowSpan      Int       @default(1)
+-
+-  @@index([dashboardId])
+-  @@index([widgetId])
+-}
+-
+-model Billing {
+-  id                String        @id @default(uuid())
+-  projectId         String        @unique
+-  project           Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+-  plan              Plan          @default(free)
+-  status            BillingStatus @default(active)
+-  seats             Int           @default(1)
+-  pricePerSeat      Int           @default(0)
+-  currentPeriodEnd  DateTime?
+-  cardBrand         String?
+-  cardLast4         String?
+-  cardExp           String?
+-
+-  invoices          Invoice[]
+-}
+-
+-model Invoice {
+-  id         String        @id @default(uuid())
+-  billingId  String
+-  billing    Billing       @relation(fields: [billingId], references: [id], onDelete: Cascade)
+-  date       DateTime
+-  amount     Int
+-  status     InvoiceStatus
+-
+-  @@index([billingId])
+-}
+diff --git a/apps/api/prisma/seed.ts b/apps/api/prisma/seed.ts
+deleted file mode 100644
+index b2f55b0..0000000
+--- a/apps/api/prisma/seed.ts
++++ /dev/null
+@@ -1,40 +0,0 @@
+-import { PrismaClient } from "@prisma/client";
+-import { hashPassword } from "../src/lib/password.js";
+-
+-const prisma = new PrismaClient();
+-
+-async function main() {
+-  const email = "demo@aidistudio.dev";
+-  const existing = await prisma.user.findUnique({ where: { email } });
+-  if (existing) {
+-    console.log(`Demo user already exists: ${email}`);
+-    return;
+-  }
+-
+-  const user = await prisma.user.create({
+-    data: {
+-      email,
+-      displayName: "Demo User",
+-      passwordHash: await hashPassword("password123"),
+-      emailVerified: true,
+-    },
+-  });
+-
+-  const project = await prisma.project.create({
+-    data: {
+-      name: "Demo Project",
+-      ownerId: user.id,
+-      members: { create: { userId: user.id, name: user.displayName, email: user.email, role: "owner" } },
+-      billing: { create: {} },
+-    },
+-  });
+-
+-  console.log(`Seeded demo user ${email} / password123 with project ${project.id}`);
+-}
+-
+-main()
+-  .catch((err) => {
+-    console.error(err);
+-    process.exit(1);
+-  })
+-  .finally(() => prisma.$disconnect());
+diff --git a/apps/api/src/lib/authz.ts b/apps/api/src/lib/authz.ts
+index ff0387a..dca2beb 100644
+--- a/apps/api/src/lib/authz.ts
++++ b/apps/api/src/lib/authz.ts
+@@ -1,16 +1,19 @@
+-import type { ProjectRole } from "@prisma/client";
+-import { prisma } from "./prisma.js";
++import { supabase } from "./supabase.js";
++
++export type ProjectRole = "owner" | "editor" | "viewer";
+ 
+ export async function getProjectRole(userId: string, projectId: string): Promise<ProjectRole | null> {
+-  const project = await prisma.project.findUnique({ where: { id: projectId }, select: { ownerId: true } });
++  const { data: project } = await supabase.from("projects").select("owner_id").eq("id", projectId).maybeSingle();
+   if (!project) return null;
+-  if (project.ownerId === userId) return "owner";
++  if (project.owner_id === userId) return "owner";
+ 
+-  const membership = await prisma.projectMember.findFirst({
+-    where: { projectId, userId },
+-    select: { role: true },
+-  });
+-  return membership?.role ?? null;
++  const { data: member } = await supabase
++    .from("project_members")
++    .select("role")
++    .eq("project_id", projectId)
++    .eq("user_id", userId)
++    .maybeSingle();
++  return (member?.role as ProjectRole | undefined) ?? null;
+ }
+ 
+ const RANK: Record<ProjectRole, number> = { viewer: 0, editor: 1, owner: 2 };
+diff --git a/apps/api/src/lib/env.ts b/apps/api/src/lib/env.ts
+index 03512a3..39e1af0 100644
+--- a/apps/api/src/lib/env.ts
++++ b/apps/api/src/lib/env.ts
+@@ -1,8 +1,9 @@
+ import { z } from "zod";
+ 
+ const envSchema = z.object({
+-  DATABASE_URL: z.string().min(1),
+-  JWT_SECRET: z.string().min(16),
++  SUPABASE_URL: z.string().url(),
++  SUPABASE_ANON_KEY: z.string().min(1),
++  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
+   PORT: z.coerce.number().default(4000),
+   CORS_ORIGIN: z.string().default("http://localhost:5173"),
+   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
+diff --git a/apps/api/src/lib/prisma.ts b/apps/api/src/lib/prisma.ts
+deleted file mode 100644
+index 901f3a0..0000000
+--- a/apps/api/src/lib/prisma.ts
++++ /dev/null
+@@ -1,3 +0,0 @@
+-import { PrismaClient } from "@prisma/client";
+-
+-export const prisma = new PrismaClient();
+diff --git a/apps/api/src/lib/serialize.ts b/apps/api/src/lib/serialize.ts
+index f623e55..6407d95 100644
+--- a/apps/api/src/lib/serialize.ts
++++ b/apps/api/src/lib/serialize.ts
+@@ -1,112 +1,171 @@
+-import type {
+-  ApiResource,
+-  Billing,
+-  Dashboard,
+-  DashboardTile,
+-  Invoice,
+-  Project,
+-  ProjectMember,
+-  User,
+-  Widget,
+-} from "@prisma/client";
++interface CountRow {
++  count: number;
++}
+ 
+-export function serializeUser(user: User) {
+-  return {
+-    id: user.id,
+-    email: user.email,
+-    display_name: user.displayName,
+-    email_verified: user.emailVerified,
+-    totp_enabled: user.totpEnabled,
+-  };
++export interface ProjectRow {
++  id: string;
++  name: string;
++  icon: string;
++  color: string;
++  plan: string;
++  owner_id: string;
++  created_at: string;
++  dashboards?: CountRow[];
++  widgets?: CountRow[];
++  resources?: CountRow[];
+ }
+ 
+-export function serializeProject(
+-  project: Project & { _count: { dashboards: number; widgets: number; resources: number } },
+-) {
++export function serializeProject(p: ProjectRow) {
+   return {
+-    id: project.id,
+-    name: project.name,
+-    icon: project.icon,
+-    color: project.color,
+-    plan: project.plan,
+-    owner_id: project.ownerId,
+-    created_at: project.createdAt.toISOString(),
+-    dashboards: project._count.dashboards,
+-    widgets: project._count.widgets,
+-    resources: project._count.resources,
++    id: p.id,
++    name: p.name,
++    icon: p.icon,
++    color: p.color,
++    plan: p.plan,
++    owner_id: p.owner_id,
++    created_at: p.created_at,
++    dashboards: p.dashboards?.[0]?.count ?? 0,
++    widgets: p.widgets?.[0]?.count ?? 0,
++    resources: p.resources?.[0]?.count ?? 0,
+   };
+ }
+ 
+-export function serializeResource(resource: ApiResource & { _count?: { widgets: number } }) {
++export interface ResourceRow {
++  id: string;
++  name: string;
++  url: string;
++  method: string;
++  auth_type: string;
++  status: string;
++  last_tested_at: string | null;
++  last_test_latency_ms: number | null;
++  imported_from: string;
++  widgets?: CountRow[];
++}
++
++export function serializeResource(r: ResourceRow) {
+   return {
+-    id: resource.id,
+-    name: resource.name,
+-    url: resource.url,
+-    method: resource.method,
+-    auth_type: resource.authType,
+-    status: resource.status,
+-    last_tested_at: resource.lastTestedAt ? resource.lastTestedAt.toISOString() : null,
+-    last_test_latency_ms: resource.lastTestLatencyMs,
+-    imported_from: resource.importedFrom,
+-    usedBy: resource._count?.widgets ?? 0,
++    id: r.id,
++    name: r.name,
++    url: r.url,
++    method: r.method,
++    auth_type: r.auth_type,
++    status: r.status,
++    last_tested_at: r.last_tested_at,
++    last_test_latency_ms: r.last_test_latency_ms,
++    imported_from: r.imported_from,
++    usedBy: r.widgets?.[0]?.count ?? 0,
+   };
+ }
+ 
+-export function serializeWidget(widget: Widget & { resource: ApiResource | null }) {
++export interface WidgetRow {
++  id: string;
++  name: string;
++  type: string;
++  is_template: boolean;
++  resource_id: string | null;
++  resource: { id: string; name: string } | null;
++  mapping: unknown;
++  fine_tune: unknown;
++  updated_at: string;
++}
++
++export function serializeWidget(w: WidgetRow) {
+   return {
+-    id: widget.id,
+-    name: widget.name,
+-    type: widget.type,
+-    is_template: widget.isTemplate,
+-    resource: widget.resource?.name ?? null,
+-    resource_id: widget.resourceId,
+-    mapping: widget.mapping ?? null,
+-    fine_tune: widget.fineTune ?? null,
+-    updated_at: widget.updatedAt.toISOString(),
++    id: w.id,
++    name: w.name,
++    type: w.type,
++    is_template: w.is_template,
++    resource: w.resource?.name ?? null,
++    resource_id: w.resource_id,
++    mapping: w.mapping ?? null,
++    fine_tune: w.fine_tune ?? null,
++    updated_at: w.updated_at,
+   };
+ }
+ 
+-export function serializeDashboard(
+-  dashboard: Dashboard & { tiles: (DashboardTile & { widget: Widget })[] },
+-) {
++export interface DashboardTileRow {
++  widget_id: string;
++  position: number;
++  col_span: number;
++  row_span: number;
++}
++
++export interface DashboardRow {
++  id: string;
++  name: string;
++  slug: string;
++  status: string;
++  share_password_hash: string | null;
++  updated_at: string;
++  dashboard_tiles?: DashboardTileRow[];
++}
++
++export function serializeDashboard(d: DashboardRow) {
++  const tiles = [...(d.dashboard_tiles ?? [])].sort((a, b) => a.position - b.position);
+   return {
+-    id: dashboard.id,
+-    name: dashboard.name,
+-    slug: dashboard.slug,
+-    status: dashboard.status,
+-    has_share_password: dashboard.sharePasswordHash != null,
+-    updated_at: dashboard.updatedAt.toISOString(),
+-    widgetIds: dashboard.tiles.sort((a, b) => a.position - b.position).map((t) => t.widgetId),
+-    layout: dashboard.tiles
+-      .sort((a, b) => a.position - b.position)
+-      .map((t) => ({ id: t.widgetId, colSpan: t.colSpan, rowSpan: t.rowSpan })),
++    id: d.id,
++    name: d.name,
++    slug: d.slug,
++    status: d.status,
++    has_share_password: d.share_password_hash != null,
++    updated_at: d.updated_at,
++    widgetIds: tiles.map((t) => t.widget_id),
++    layout: tiles.map((t) => ({ id: t.widget_id, colSpan: t.col_span, rowSpan: t.row_span })),
+   };
+ }
+ 
+-export function serializeTeamMember(member: ProjectMember) {
++export interface TeamMemberRow {
++  id: string;
++  name: string;
++  email: string;
++  role: string;
++  invited_at: string;
++}
++
++export function serializeTeamMember(m: TeamMemberRow) {
+   return {
+-    id: member.id,
+-    name: member.name,
+-    email: member.email,
+-    role: member.role,
+-    invited_at: member.invitedAt.toISOString(),
++    id: m.id,
++    name: m.name,
++    email: m.email,
++    role: m.role,
++    invited_at: m.invited_at,
+   };
+ }
+ 
+-export function serializeBilling(billing: Billing & { invoices: Invoice[] }) {
++export interface InvoiceRow {
++  id: string;
++  date: string;
++  amount: number;
++  status: string;
++}
++
++export interface BillingRow {
++  plan: string;
++  status: string;
++  seats: number;
++  price_per_seat: number;
++  current_period_end: string | null;
++  card_brand: string | null;
++  card_last4: string | null;
++  card_exp: string | null;
++  invoices?: InvoiceRow[];
++}
++
++export function serializeBilling(b: BillingRow) {
+   return {
+-    plan: billing.plan,
+-    status: billing.status,
+-    seats: billing.seats,
+-    pricePerSeat: billing.pricePerSeat,
+-    current_period_end: billing.currentPeriodEnd ? billing.currentPeriodEnd.toISOString() : null,
++    plan: b.plan,
++    status: b.status,
++    seats: b.seats,
++    pricePerSeat: b.price_per_seat,
++    current_period_end: b.current_period_end,
+     card:
+-      billing.cardBrand && billing.cardLast4 && billing.cardExp
+-        ? { brand: billing.cardBrand, last4: billing.cardLast4, exp: billing.cardExp }
++      b.card_brand && b.card_last4 && b.card_exp
++        ? { brand: b.card_brand, last4: b.card_last4, exp: b.card_exp }
+         : null,
+-    invoices: billing.invoices.map((inv) => ({
++    invoices: (b.invoices ?? []).map((inv) => ({
+       id: inv.id,
+-      date: inv.date.toISOString(),
++      date: inv.date,
+       amount: inv.amount,
+       status: inv.status,
+     })),
+diff --git a/apps/api/src/lib/sessions.ts b/apps/api/src/lib/sessions.ts
+deleted file mode 100644
+index 204b76c..0000000
+--- a/apps/api/src/lib/sessions.ts
++++ /dev/null
+@@ -1,29 +0,0 @@
+-import { randomUUID } from "node:crypto";
+-import type { FastifyInstance } from "fastify";
+-import { prisma } from "./prisma.js";
+-import { generateRawToken, hashToken } from "./tokens.js";
+-
+-const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+-
+-export async function createSession(
+-  app: FastifyInstance,
+-  userId: string,
+-  meta: { userAgent?: string; ip?: string },
+-) {
+-  const id = randomUUID();
+-  const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
+-
+-  await prisma.session.create({
+-    data: {
+-      id,
+-      userId,
+-      tokenHash: hashToken(generateRawToken()),
+-      userAgent: meta.userAgent,
+-      ip: meta.ip,
+-      expiresAt,
+-    },
+-  });
+-
+-  const accessToken = app.jwt.sign({ sub: userId, sid: id });
+-  return { accessToken, sessionId: id, expiresAt };
+-}
+diff --git a/apps/api/src/lib/supabase.ts b/apps/api/src/lib/supabase.ts
+new file mode 100644
+index 0000000..94e2c52
+--- /dev/null
++++ b/apps/api/src/lib/supabase.ts
+@@ -0,0 +1,9 @@
++import { createClient } from "@supabase/supabase-js";
++import { env } from "./env.js";
++
++// Service-role key bypasses RLS — this API is the trusted backend, so it
++// enforces project membership/role checks itself (see authz.ts) rather than
++// relying on Postgres RLS policies.
++export const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
++  auth: { autoRefreshToken: false, persistSession: false },
++});
+diff --git a/apps/api/src/lib/tokens.ts b/apps/api/src/lib/tokens.ts
+deleted file mode 100644
+index 0fd0adb..0000000
+--- a/apps/api/src/lib/tokens.ts
++++ /dev/null
+@@ -1,9 +0,0 @@
+-import { createHash, randomBytes } from "node:crypto";
+-
+-export function generateRawToken() {
+-  return randomBytes(32).toString("hex");
+-}
+-
+-export function hashToken(raw: string) {
+-  return createHash("sha256").update(raw).digest("hex");
+-}
+diff --git a/apps/api/src/plugins/auth.ts b/apps/api/src/plugins/auth.ts
+deleted file mode 100644
+index fdd8433..0000000
+--- a/apps/api/src/plugins/auth.ts
++++ /dev/null
+@@ -1,51 +0,0 @@
+-import fastifyJwt from "@fastify/jwt";
+-import fp from "fastify-plugin";
+-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+-import { env } from "../lib/env.js";
+-import { prisma } from "../lib/prisma.js";
+-
+-export interface JwtPayload {
+-  sub: string;
+-  sid: string;
+-}
+-
+-declare module "fastify" {
+-  interface FastifyInstance {
+-    authenticate: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
+-  }
+-  interface FastifyRequest {
+-    userId: string;
+-    sessionId: string;
+-  }
+-}
+-
+-declare module "@fastify/jwt" {
+-  interface FastifyJWT {
+-    payload: JwtPayload;
+-    user: JwtPayload;
+-  }
+-}
+-
+-export default fp(async function authPlugin(app: FastifyInstance) {
+-  app.register(fastifyJwt, {
+-    secret: env.JWT_SECRET,
+-    sign: { expiresIn: "7d" },
+-  });
+-
+-  app.decorate("authenticate", async (request: FastifyRequest, reply: FastifyReply) => {
+-    try {
+-      await request.jwtVerify();
+-    } catch {
+-      return reply.code(401).send({ error: "Unauthorized" });
+-    }
+-
+-    const payload = request.user;
+-    const session = await prisma.session.findUnique({ where: { id: payload.sid } });
+-    if (!session || session.revokedAt || session.expiresAt < new Date()) {
+-      return reply.code(401).send({ error: "Session expired" });
+-    }
+-
+-    request.userId = payload.sub;
+-    request.sessionId = payload.sid;
+-  });
+-});
+diff --git a/apps/api/src/plugins/supabaseAuth.ts b/apps/api/src/plugins/supabaseAuth.ts
+new file mode 100644
+index 0000000..1328af4
+--- /dev/null
++++ b/apps/api/src/plugins/supabaseAuth.ts
+@@ -0,0 +1,64 @@
++import fp from "fastify-plugin";
++import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
++import { env } from "../lib/env.js";
++import { supabase } from "../lib/supabase.js";
++
++export interface SupabaseUser {
++  id: string;
++  email: string;
++  name: string;
++}
++
++declare module "fastify" {
++  interface FastifyInstance {
++    authenticate: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
++  }
++  interface FastifyRequest {
++    userId: string;
++    userEmail: string;
++    userName: string;
++  }
++}
++
++async function fetchSupabaseUser(token: string): Promise<SupabaseUser | null> {
++  let res: Response;
++  try {
++    res = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
++      headers: { Authorization: `Bearer ${token}`, apikey: env.SUPABASE_ANON_KEY },
++    });
++  } catch {
++    return null;
++  }
++  if (!res.ok) return null;
++
++  const data = (await res.json()) as {
++    id: string;
++    email?: string;
++    user_metadata?: { name?: string; full_name?: string };
++  };
++  const email = data.email ?? "";
++  return {
++    id: data.id,
++    email,
++    name: data.user_metadata?.name ?? data.user_metadata?.full_name ?? email.split("@")[0] ?? "User",
++  };
++}
++
++export default fp(async function supabaseAuthPlugin(app: FastifyInstance) {
++  app.decorate("authenticate", async (request: FastifyRequest, reply: FastifyReply) => {
++    const header = request.headers.authorization;
++    const token = header?.startsWith("Bearer ") ? header.slice("Bearer ".length) : undefined;
++    if (!token) return reply.code(401).send({ error: "Unauthorized" });
++
++    const user = await fetchSupabaseUser(token);
++    if (!user) return reply.code(401).send({ error: "Unauthorized" });
++
++    request.userId = user.id;
++    request.userEmail = user.email;
++    request.userName = user.name;
++
++    if (user.email) {
++      await supabase.from("project_members").update({ user_id: user.id }).eq("email", user.email).is("user_id", null);
++    }
++  });
++});
+diff --git a/apps/api/src/routes/auth.ts b/apps/api/src/routes/auth.ts
+deleted file mode 100644
+index 2cee568..0000000
+--- a/apps/api/src/routes/auth.ts
++++ /dev/null
+@@ -1,195 +0,0 @@
+-import type { FastifyInstance } from "fastify";
+-import { z } from "zod";
+-import { env } from "../lib/env.js";
+-import { hashPassword, verifyPassword } from "../lib/password.js";
+-import { prisma } from "../lib/prisma.js";
+-import { serializeUser } from "../lib/serialize.js";
+-import { createSession } from "../lib/sessions.js";
+-import { generateRawToken, hashToken } from "../lib/tokens.js";
+-
+-const VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000;
+-const RESET_TTL_MS = 60 * 60 * 1000;
+-
+-const signupSchema = z
+-  .object({
+-    name: z.string().trim().min(1, "Enter your name"),
+-    email: z.string().trim().email("Enter a valid email address"),
+-    password: z.string().min(8, "Password must be at least 8 characters"),
+-    confirmPassword: z.string(),
+-  })
+-  .refine((d) => d.password === d.confirmPassword, {
+-    message: "Passwords don't match",
+-    path: ["confirmPassword"],
+-  });
+-
+-const loginSchema = z.object({
+-  email: z.string().trim().email("Enter a valid email address"),
+-  password: z.string().min(1, "Enter your password"),
+-});
+-
+-const emailSchema = z.object({ email: z.string().trim().email("Enter a valid email address") });
+-
+-const verifySchema = z.object({ token: z.string().min(1) });
+-
+-const resetSchema = z
+-  .object({
+-    token: z.string().min(1),
+-    password: z.string().min(8, "Password must be at least 8 characters"),
+-    confirmPassword: z.string(),
+-  })
+-  .refine((d) => d.password === d.confirmPassword, {
+-    message: "Passwords don't match",
+-    path: ["confirmPassword"],
+-  });
+-
+-function devToken(raw: string) {
+-  return env.NODE_ENV === "production" ? undefined : raw;
+-}
+-
+-export default async function authRoutes(app: FastifyInstance) {
+-  app.post("/auth/signup", async (request, reply) => {
+-    const parsed = signupSchema.safeParse(request.body);
+-    if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+-    const { name, email, password } = parsed.data;
+-
+-    const existing = await prisma.user.findUnique({ where: { email } });
+-    if (existing) return reply.code(409).send({ error: "An account with that email already exists" });
+-
+-    const user = await prisma.user.create({
+-      data: { email, displayName: name, passwordHash: await hashPassword(password) },
+-    });
+-
+-    const raw = generateRawToken();
+-    await prisma.emailVerificationToken.create({
+-      data: { userId: user.id, tokenHash: hashToken(raw), expiresAt: new Date(Date.now() + VERIFICATION_TTL_MS) },
+-    });
+-    app.log.info(`[dev-email] verification link for ${email}: /verify-email?token=${raw}`);
+-
+-    return reply.code(201).send({ user: serializeUser(user), verification_token: devToken(raw) });
+-  });
+-
+-  app.post("/auth/resend-verification", async (request, reply) => {
+-    const parsed = emailSchema.safeParse(request.body);
+-    if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+-
+-    const user = await prisma.user.findUnique({ where: { email: parsed.data.email } });
+-    let raw: string | undefined;
+-    if (user && !user.emailVerified) {
+-      raw = generateRawToken();
+-      await prisma.emailVerificationToken.create({
+-        data: { userId: user.id, tokenHash: hashToken(raw), expiresAt: new Date(Date.now() + VERIFICATION_TTL_MS) },
+-      });
+-      app.log.info(`[dev-email] verification link for ${user.email}: /verify-email?token=${raw}`);
+-    }
+-
+-    return reply.send({ ok: true, verification_token: raw ? devToken(raw) : undefined });
+-  });
+-
+-  app.post("/auth/verify-email", async (request, reply) => {
+-    const parsed = verifySchema.safeParse(request.body);
+-    if (!parsed.success) return reply.code(400).send({ error: "Invalid token" });
+-
+-    const record = await prisma.emailVerificationToken.findUnique({
+-      where: { tokenHash: hashToken(parsed.data.token) },
+-    });
+-    if (!record || record.usedAt || record.expiresAt < new Date()) {
+-      return reply.code(400).send({ error: "Invalid or expired verification link" });
+-    }
+-
+-    const user = await prisma.user.update({
+-      where: { id: record.userId },
+-      data: { emailVerified: true },
+-    });
+-    await prisma.emailVerificationToken.update({ where: { id: record.id }, data: { usedAt: new Date() } });
+-
+-    const { accessToken } = await createSession(app, user.id, {
+-      userAgent: request.headers["user-agent"],
+-      ip: request.ip,
+-    });
+-
+-    return reply.send({ user: serializeUser(user), access_token: accessToken });
+-  });
+-
+-  app.post("/auth/login", async (request, reply) => {
+-    const parsed = loginSchema.safeParse(request.body);
+-    if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+-    const { email, password } = parsed.data;
+-
+-    const user = await prisma.user.findUnique({ where: { email } });
+-    if (!user || !(await verifyPassword(password, user.passwordHash))) {
+-      return reply.code(401).send({ error: "Invalid email or password" });
+-    }
+-    if (!user.emailVerified) {
+-      return reply.code(403).send({ error: "Verify your email before signing in", code: "EMAIL_NOT_VERIFIED" });
+-    }
+-
+-    const { accessToken } = await createSession(app, user.id, {
+-      userAgent: request.headers["user-agent"],
+-      ip: request.ip,
+-    });
+-
+-    return reply.send({ user: serializeUser(user), access_token: accessToken });
+-  });
+-
+-  app.post("/auth/forgot-password", async (request, reply) => {
+-    const parsed = emailSchema.safeParse(request.body);
+-    if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+-
+-    const user = await prisma.user.findUnique({ where: { email: parsed.data.email } });
+-    let raw: string | undefined;
+-    if (user) {
+-      raw = generateRawToken();
+-      await prisma.passwordResetToken.create({
+-        data: { userId: user.id, tokenHash: hashToken(raw), expiresAt: new Date(Date.now() + RESET_TTL_MS) },
+-      });
+-      app.log.info(`[dev-email] password reset link for ${user.email}: /reset-password?token=${raw}`);
+-    }
+-
+-    return reply.send({ ok: true, reset_token: raw ? devToken(raw) : undefined });
+-  });
+-
+-  app.post("/auth/reset-password", async (request, reply) => {
+-    const parsed = resetSchema.safeParse(request.body);
+-    if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+-
+-    const record = await prisma.passwordResetToken.findUnique({
+-      where: { tokenHash: hashToken(parsed.data.token) },
+-    });
+-    if (!record || record.usedAt || record.expiresAt < new Date()) {
+-      return reply.code(400).send({ error: "Invalid or expired reset link" });
+-    }
+-
+-    await prisma.$transaction([
+-      prisma.user.update({
+-        where: { id: record.userId },
+-        data: { passwordHash: await hashPassword(parsed.data.password) },
+-      }),
+-      prisma.passwordResetToken.update({ where: { id: record.id }, data: { usedAt: new Date() } }),
+-      prisma.session.updateMany({
+-        where: { userId: record.userId, revokedAt: null },
+-        data: { revokedAt: new Date() },
+-      }),
+-    ]);
+-
+-    return reply.send({ ok: true });
+-  });
+-
+-  app.post("/auth/logout", { preHandler: app.authenticate }, async (request, reply) => {
+-    await prisma.session.update({ where: { id: request.sessionId }, data: { revokedAt: new Date() } });
+-    return reply.code(204).send();
+-  });
+-
+-  app.post("/auth/logout-all", { preHandler: app.authenticate }, async (request, reply) => {
+-    await prisma.session.updateMany({
+-      where: { userId: request.userId, id: { not: request.sessionId }, revokedAt: null },
+-      data: { revokedAt: new Date() },
+-    });
+-    return reply.send({ ok: true });
+-  });
+-
+-  app.get("/auth/me", { preHandler: app.authenticate }, async (request, reply) => {
+-    const user = await prisma.user.findUnique({ where: { id: request.userId } });
+-    if (!user) return reply.code(404).send({ error: "Not found" });
+-    return reply.send({ user: serializeUser(user) });
+-  });
+-}
+diff --git a/apps/api/src/routes/billing.ts b/apps/api/src/routes/billing.ts
+index c8dc001..d07b8ee 100644
+--- a/apps/api/src/routes/billing.ts
++++ b/apps/api/src/routes/billing.ts
+@@ -1,16 +1,33 @@
+ import type { FastifyInstance } from "fastify";
+ import { z } from "zod";
+ import { getProjectRole, roleAtLeast } from "../lib/authz.js";
+-import { prisma } from "../lib/prisma.js";
+-import { serializeBilling } from "../lib/serialize.js";
++import { serializeBilling, type BillingRow } from "../lib/serialize.js";
++import { supabase } from "../lib/supabase.js";
+ 
+-const BILLING_INCLUDE = { invoices: { orderBy: { date: "desc" as const } } } as const;
++const BILLING_SELECT = "*, invoices(*)";
+ 
+ const updateSchema = z.object({
+   plan: z.enum(["free", "pro", "team", "enterprise"]).optional(),
+   seats: z.number().int().min(1).optional(),
+ });
+ 
++async function getOrCreateBilling(projectId: string): Promise<BillingRow> {
++  const { data: existing } = await supabase
++    .from("billing")
++    .select(BILLING_SELECT)
++    .eq("project_id", projectId)
++    .maybeSingle<BillingRow>();
++  if (existing) return existing;
++
++  const { data: created, error } = await supabase
++    .from("billing")
++    .insert({ project_id: projectId })
++    .select(BILLING_SELECT)
++    .single<BillingRow>();
++  if (error || !created) throw error ?? new Error("Failed to create billing record");
++  return created;
++}
++
+ export default async function billingRoutes(app: FastifyInstance) {
+   app.addHook("preHandler", app.authenticate);
+ 
+@@ -19,16 +36,14 @@ export default async function billingRoutes(app: FastifyInstance) {
+     const role = await getProjectRole(request.userId, projectId);
+     if (!roleAtLeast(role, "viewer")) return reply.code(404).send({ error: "Project not found" });
+ 
+-    const billing = await prisma.billing.upsert({
+-      where: { projectId },
+-      update: {},
+-      create: { projectId },
+-      include: BILLING_INCLUDE,
+-    });
+-    return reply.send({ billing: serializeBilling(billing) });
++    try {
++      const billing = await getOrCreateBilling(projectId);
++      return reply.send({ billing: serializeBilling(billing) });
++    } catch {
++      return reply.code(500).send({ error: "Failed to load billing" });
++    }
+   });
+ 
+-  // Note: no real payment processor is wired up yet — this updates plan/seat records only.
+   app.patch("/projects/:projectId/billing", async (request, reply) => {
+     const { projectId } = request.params as { projectId: string };
+     const role = await getProjectRole(request.userId, projectId);
+@@ -37,12 +52,23 @@ export default async function billingRoutes(app: FastifyInstance) {
+     const parsed = updateSchema.safeParse(request.body);
+     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+ 
+-    const billing = await prisma.billing.upsert({
+-      where: { projectId },
+-      update: parsed.data,
+-      create: { projectId, ...parsed.data },
+-      include: BILLING_INCLUDE,
+-    });
++    try {
++      await getOrCreateBilling(projectId);
++    } catch {
++      return reply.code(500).send({ error: "Failed to load billing" });
++    }
++
++    const patch: Record<string, unknown> = {};
++    if (parsed.data.plan !== undefined) patch.plan = parsed.data.plan;
++    if (parsed.data.seats !== undefined) patch.seats = parsed.data.seats;
++
++    const { data: billing, error } = await supabase
++      .from("billing")
++      .update(patch)
++      .eq("project_id", projectId)
++      .select(BILLING_SELECT)
++      .single<BillingRow>();
++    if (error || !billing) return reply.code(500).send({ error: "Failed to update billing" });
+     return reply.send({ billing: serializeBilling(billing) });
+   });
+ }
+diff --git a/apps/api/src/routes/dashboards.ts b/apps/api/src/routes/dashboards.ts
+index 0b1c56b..bf00a83 100644
+--- a/apps/api/src/routes/dashboards.ts
++++ b/apps/api/src/routes/dashboards.ts
+@@ -2,11 +2,11 @@ import type { FastifyInstance } from "fastify";
+ import { z } from "zod";
+ import { getProjectRole, roleAtLeast } from "../lib/authz.js";
+ import { hashPassword, verifyPassword } from "../lib/password.js";
+-import { prisma } from "../lib/prisma.js";
+-import { serializeDashboard } from "../lib/serialize.js";
++import { serializeDashboard, type DashboardRow } from "../lib/serialize.js";
+ import { randomSuffix, slugify } from "../lib/slug.js";
++import { supabase } from "../lib/supabase.js";
+ 
+-const DASHBOARD_INCLUDE = { tiles: { include: { widget: { include: { resource: true } } } } } as const;
++const DASHBOARD_SELECT = "*, dashboard_tiles(widget_id, position, col_span, row_span)";
+ 
+ const createSchema = z.object({
+   name: z.string().trim().min(1, "Enter a dashboard name"),
+@@ -30,10 +30,12 @@ const tilesSchema = z.object({
+ 
+ async function uniqueSlug(base: string) {
+   let slug = slugify(base);
+-  while (await prisma.dashboard.findUnique({ where: { slug } })) {
++  for (let attempt = 0; attempt < 5; attempt++) {
++    const { data } = await supabase.from("dashboards").select("id").eq("slug", slug).maybeSingle();
++    if (!data) return slug;
+     slug = `${slugify(base)}-${randomSuffix()}`;
+   }
+-  return slug;
++  return `${slugify(base)}-${randomSuffix()}`;
+ }
+ 
+ export default async function dashboardRoutes(app: FastifyInstance) {
+@@ -44,12 +46,14 @@ export default async function dashboardRoutes(app: FastifyInstance) {
+     const role = await getProjectRole(request.userId, projectId);
+     if (!roleAtLeast(role, "viewer")) return reply.code(404).send({ error: "Project not found" });
+ 
+-    const dashboards = await prisma.dashboard.findMany({
+-      where: { projectId },
+-      include: DASHBOARD_INCLUDE,
+-      orderBy: { updatedAt: "desc" },
+-    });
+-    return reply.send({ dashboards: dashboards.map(serializeDashboard) });
++    const { data, error } = await supabase
++      .from("dashboards")
++      .select(DASHBOARD_SELECT)
++      .eq("project_id", projectId)
++      .order("updated_at", { ascending: false })
++      .returns<DashboardRow[]>();
++    if (error) return reply.code(500).send({ error: "Failed to load dashboards" });
++    return reply.send({ dashboards: (data ?? []).map(serializeDashboard) });
+   });
+ 
+   app.post("/projects/:projectId/dashboards", async (request, reply) => {
+@@ -61,10 +65,12 @@ export default async function dashboardRoutes(app: FastifyInstance) {
+     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+ 
+     const slug = await uniqueSlug(parsed.data.name);
+-    const dashboard = await prisma.dashboard.create({
+-      data: { name: parsed.data.name, slug, projectId },
+-      include: DASHBOARD_INCLUDE,
+-    });
++    const { data: dashboard, error } = await supabase
++      .from("dashboards")
++      .insert({ name: parsed.data.name, slug, project_id: projectId })
++      .select(DASHBOARD_SELECT)
++      .single<DashboardRow>();
++    if (error || !dashboard) return reply.code(500).send({ error: "Failed to create dashboard" });
+     return reply.code(201).send({ dashboard: serializeDashboard(dashboard) });
+   });
+ 
+@@ -73,8 +79,13 @@ export default async function dashboardRoutes(app: FastifyInstance) {
+     const role = await getProjectRole(request.userId, projectId);
+     if (!roleAtLeast(role, "viewer")) return reply.code(404).send({ error: "Project not found" });
+ 
+-    const dashboard = await prisma.dashboard.findFirst({ where: { id, projectId }, include: DASHBOARD_INCLUDE });
+-    if (!dashboard) return reply.code(404).send({ error: "Dashboard not found" });
++    const { data: dashboard, error } = await supabase
++      .from("dashboards")
++      .select(DASHBOARD_SELECT)
++      .eq("id", id)
++      .eq("project_id", projectId)
++      .maybeSingle<DashboardRow>();
++    if (error || !dashboard) return reply.code(404).send({ error: "Dashboard not found" });
+     return reply.send({ dashboard: serializeDashboard(dashboard) });
+   });
+ 
+@@ -86,20 +97,21 @@ export default async function dashboardRoutes(app: FastifyInstance) {
+     const parsed = updateSchema.safeParse(request.body);
+     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+ 
+-    const existing = await prisma.dashboard.findFirst({ where: { id, projectId } });
+-    if (!existing) return reply.code(404).send({ error: "Dashboard not found" });
+-
+     const { sharePassword, ...rest } = parsed.data;
+-    const dashboard = await prisma.dashboard.update({
+-      where: { id },
+-      data: {
+-        ...rest,
+-        ...(sharePassword !== undefined
+-          ? { sharePasswordHash: sharePassword ? await hashPassword(sharePassword) : null }
+-          : {}),
+-      },
+-      include: DASHBOARD_INCLUDE,
+-    });
++    const patch: Record<string, unknown> = { ...rest, updated_at: new Date().toISOString() };
++    if (sharePassword !== undefined) {
++      patch.share_password_hash = sharePassword ? await hashPassword(sharePassword) : null;
++    }
++
++    const { data: dashboard, error } = await supabase
++      .from("dashboards")
++      .update(patch)
++      .eq("id", id)
++      .eq("project_id", projectId)
++      .select(DASHBOARD_SELECT)
++      .maybeSingle<DashboardRow>();
++    if (error) return reply.code(500).send({ error: "Failed to update dashboard" });
++    if (!dashboard) return reply.code(404).send({ error: "Dashboard not found" });
+     return reply.send({ dashboard: serializeDashboard(dashboard) });
+   });
+ 
+@@ -111,30 +123,38 @@ export default async function dashboardRoutes(app: FastifyInstance) {
+     const parsed = tilesSchema.safeParse(request.body);
+     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+ 
+-    const dashboard = await prisma.dashboard.findFirst({ where: { id, projectId } });
++    const { data: dashboard } = await supabase
++      .from("dashboards")
++      .select("id")
++      .eq("id", id)
++      .eq("project_id", projectId)
++      .maybeSingle();
+     if (!dashboard) return reply.code(404).send({ error: "Dashboard not found" });
+ 
+     const widgetIds = parsed.data.tiles.map((t) => t.widgetId);
+-    const validWidgets = await prisma.widget.count({ where: { id: { in: widgetIds }, projectId } });
+-    if (validWidgets !== new Set(widgetIds).size) {
+-      return reply.code(400).send({ error: "One or more widgets do not belong to this project" });
++    if (widgetIds.length) {
++      const { count } = await supabase
++        .from("widgets")
++        .select("id", { count: "exact", head: true })
++        .eq("project_id", projectId)
++        .in("id", widgetIds);
++      if ((count ?? 0) !== new Set(widgetIds).size) {
++        return reply.code(400).send({ error: "One or more widgets do not belong to this project" });
++      }
+     }
+ 
+-    await prisma.$transaction([
+-      prisma.dashboardTile.deleteMany({ where: { dashboardId: id } }),
+-      prisma.dashboardTile.createMany({
+-        data: parsed.data.tiles.map((tile, index) => ({
+-          dashboardId: id,
+-          widgetId: tile.widgetId,
+-          colSpan: tile.colSpan,
+-          rowSpan: tile.rowSpan,
+-          position: index,
+-        })),
+-      }),
+-      prisma.dashboard.update({ where: { id }, data: { updatedAt: new Date() } }),
+-    ]);
+-
+-    const updated = await prisma.dashboard.findUniqueOrThrow({ where: { id }, include: DASHBOARD_INCLUDE });
++    const { error: rpcError } = await supabase.rpc("replace_dashboard_tiles", {
++      p_dashboard_id: id,
++      p_tiles: parsed.data.tiles,
++    });
++    if (rpcError) return reply.code(500).send({ error: "Failed to update dashboard layout" });
++
++    const { data: updated, error } = await supabase
++      .from("dashboards")
++      .select(DASHBOARD_SELECT)
++      .eq("id", id)
++      .single<DashboardRow>();
++    if (error || !updated) return reply.code(500).send({ error: "Failed to load updated dashboard" });
+     return reply.send({ dashboard: serializeDashboard(updated) });
+   });
+ 
+@@ -143,8 +163,14 @@ export default async function dashboardRoutes(app: FastifyInstance) {
+     const role = await getProjectRole(request.userId, projectId);
+     if (!roleAtLeast(role, "editor")) return reply.code(404).send({ error: "Project not found" });
+ 
+-    const result = await prisma.dashboard.deleteMany({ where: { id, projectId } });
+-    if (result.count === 0) return reply.code(404).send({ error: "Dashboard not found" });
++    const { data, error } = await supabase
++      .from("dashboards")
++      .delete()
++      .eq("id", id)
++      .eq("project_id", projectId)
++      .select("id");
++    if (error) return reply.code(500).send({ error: "Failed to delete dashboard" });
++    if (!data || data.length === 0) return reply.code(404).send({ error: "Dashboard not found" });
+     return reply.code(204).send();
+   });
+ }
+@@ -157,13 +183,17 @@ export async function publicDashboardRoutes(app: FastifyInstance) {
+     const parsed = publicPasswordSchema.safeParse(request.query);
+     const password = parsed.success ? parsed.data.password : undefined;
+ 
+-    const dashboard = await prisma.dashboard.findUnique({ where: { slug }, include: DASHBOARD_INCLUDE });
+-    if (!dashboard || dashboard.status !== "published") {
++    const { data: dashboard, error } = await supabase
++      .from("dashboards")
++      .select(DASHBOARD_SELECT)
++      .eq("slug", slug)
++      .maybeSingle<DashboardRow>();
++    if (error || !dashboard || dashboard.status !== "published") {
+       return reply.code(404).send({ error: "Dashboard not found" });
+     }
+ 
+-    if (dashboard.sharePasswordHash) {
+-      if (!password || !(await verifyPassword(password, dashboard.sharePasswordHash))) {
++    if (dashboard.share_password_hash) {
++      if (!password || !(await verifyPassword(password, dashboard.share_password_hash))) {
+         return reply.code(401).send({ error: "Password required", locked: true });
+       }
+     }
+diff --git a/apps/api/src/routes/projects.ts b/apps/api/src/routes/projects.ts
+index d522aa1..42a8085 100644
+--- a/apps/api/src/routes/projects.ts
++++ b/apps/api/src/routes/projects.ts
+@@ -1,10 +1,10 @@
+ import type { FastifyInstance } from "fastify";
+ import { z } from "zod";
+ import { getProjectRole, roleAtLeast } from "../lib/authz.js";
+-import { prisma } from "../lib/prisma.js";
+-import { serializeProject } from "../lib/serialize.js";
++import { serializeProject, type ProjectRow } from "../lib/serialize.js";
++import { supabase } from "../lib/supabase.js";
+ 
+-const PROJECT_COUNTS = { _count: { select: { dashboards: true, widgets: true, resources: true } } } as const;
++const PROJECT_SELECT = "*, dashboards:dashboards(count), widgets:widgets(count), resources:api_resources(count)";
+ 
+ const createSchema = z.object({
+   name: z.string().trim().min(1, "Enter a project name"),
+@@ -23,32 +23,44 @@ export default async function projectRoutes(app: FastifyInstance) {
+   app.addHook("preHandler", app.authenticate);
+ 
+   app.get("/projects", async (request, reply) => {
+-    const projects = await prisma.project.findMany({
+-      where: {
+-        OR: [{ ownerId: request.userId }, { members: { some: { userId: request.userId } } }],
+-      },
+-      include: PROJECT_COUNTS,
+-      orderBy: { createdAt: "desc" },
+-    });
+-    return reply.send({ projects: projects.map(serializeProject) });
++    const { data: memberships } = await supabase
++      .from("project_members")
++      .select("project_id")
++      .eq("user_id", request.userId);
++    const memberProjectIds = (memberships ?? []).map((m) => m.project_id as string);
++
++    let query = supabase.from("projects").select(PROJECT_SELECT).order("created_at", { ascending: false });
++    query = memberProjectIds.length
++      ? query.or(`owner_id.eq.${request.userId},id.in.(${memberProjectIds.join(",")})`)
++      : query.eq("owner_id", request.userId);
++
++    const { data, error } = await query.returns<ProjectRow[]>();
++    if (error) return reply.code(500).send({ error: "Failed to load projects" });
++    return reply.send({ projects: (data ?? []).map(serializeProject) });
+   });
+ 
+   app.post("/projects", async (request, reply) => {
+     const parsed = createSchema.safeParse(request.body);
+     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+ 
+-    const user = await prisma.user.findUniqueOrThrow({ where: { id: request.userId } });
+-    const project = await prisma.project.create({
+-      data: {
+-        ...parsed.data,
+-        ownerId: request.userId,
+-        members: {
+-          create: { userId: request.userId, name: user.displayName, email: user.email, role: "owner" },
+-        },
+-        billing: { create: {} },
+-      },
+-      include: PROJECT_COUNTS,
+-    });
++    const { data: created, error: rpcError } = await supabase
++      .rpc("create_project", {
++        p_name: parsed.data.name,
++        p_icon: parsed.data.icon,
++        p_color: parsed.data.color,
++        p_owner_id: request.userId,
++        p_owner_name: request.userName,
++        p_owner_email: request.userEmail,
++      })
++      .single<{ id: string }>();
++    if (rpcError || !created) return reply.code(500).send({ error: "Failed to create project" });
++
++    const { data: project, error } = await supabase
++      .from("projects")
++      .select(PROJECT_SELECT)
++      .eq("id", created.id)
++      .single<ProjectRow>();
++    if (error || !project) return reply.code(500).send({ error: "Failed to load created project" });
+     return reply.code(201).send({ project: serializeProject(project) });
+   });
+ 
+@@ -57,8 +69,12 @@ export default async function projectRoutes(app: FastifyInstance) {
+     const role = await getProjectRole(request.userId, id);
+     if (!roleAtLeast(role, "viewer")) return reply.code(404).send({ error: "Project not found" });
+ 
+-    const project = await prisma.project.findUnique({ where: { id }, include: PROJECT_COUNTS });
+-    if (!project) return reply.code(404).send({ error: "Project not found" });
++    const { data: project, error } = await supabase
++      .from("projects")
++      .select(PROJECT_SELECT)
++      .eq("id", id)
++      .maybeSingle<ProjectRow>();
++    if (error || !project) return reply.code(404).send({ error: "Project not found" });
+     return reply.send({ project: serializeProject(project) });
+   });
+ 
+@@ -70,7 +86,13 @@ export default async function projectRoutes(app: FastifyInstance) {
+     const parsed = updateSchema.safeParse(request.body);
+     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+ 
+-    const project = await prisma.project.update({ where: { id }, data: parsed.data, include: PROJECT_COUNTS });
++    const { data: project, error } = await supabase
++      .from("projects")
++      .update({ ...parsed.data, updated_at: new Date().toISOString() })
++      .eq("id", id)
++      .select(PROJECT_SELECT)
++      .single<ProjectRow>();
++    if (error || !project) return reply.code(500).send({ error: "Failed to update project" });
+     return reply.send({ project: serializeProject(project) });
+   });
+ 
+@@ -79,7 +101,8 @@ export default async function projectRoutes(app: FastifyInstance) {
+     const role = await getProjectRole(request.userId, id);
+     if (!roleAtLeast(role, "owner")) return reply.code(404).send({ error: "Project not found" });
+ 
+-    await prisma.project.delete({ where: { id } });
++    const { error } = await supabase.from("projects").delete().eq("id", id);
++    if (error) return reply.code(500).send({ error: "Failed to delete project" });
+     return reply.code(204).send();
+   });
+ }
+diff --git a/apps/api/src/routes/resources.ts b/apps/api/src/routes/resources.ts
+index 33199bb..b347aaf 100644
+--- a/apps/api/src/routes/resources.ts
++++ b/apps/api/src/routes/resources.ts
+@@ -1,11 +1,11 @@
+ import type { FastifyInstance } from "fastify";
+ import { z } from "zod";
+ import { getProjectRole, roleAtLeast } from "../lib/authz.js";
+-import { prisma } from "../lib/prisma.js";
+-import { serializeResource } from "../lib/serialize.js";
++import { serializeResource, type ResourceRow } from "../lib/serialize.js";
+ import { assertPublicHttpUrl } from "../lib/ssrfGuard.js";
++import { supabase } from "../lib/supabase.js";
+ 
+-const RESOURCE_COUNTS = { _count: { select: { widgets: true } } } as const;
++const RESOURCE_SELECT = "*, widgets:widgets(count)";
+ 
+ const createSchema = z.object({
+   name: z.string().trim().min(1, "Enter a resource name"),
+@@ -22,6 +22,16 @@ const updateSchema = z.object({
+   authCredential: z.string().trim().optional(),
+ });
+ 
++function toRow(input: Partial<z.infer<typeof createSchema>>) {
++  const row: Record<string, unknown> = {};
++  if (input.name !== undefined) row.name = input.name;
++  if (input.url !== undefined) row.url = input.url;
++  if (input.authType !== undefined) row.auth_type = input.authType;
++  if (input.authCredential !== undefined) row.auth_credential = input.authCredential;
++  if (input.importedFrom !== undefined) row.imported_from = input.importedFrom;
++  return row;
++}
++
+ export default async function resourceRoutes(app: FastifyInstance) {
+   app.addHook("preHandler", app.authenticate);
+ 
+@@ -30,12 +40,14 @@ export default async function resourceRoutes(app: FastifyInstance) {
+     const role = await getProjectRole(request.userId, projectId);
+     if (!roleAtLeast(role, "viewer")) return reply.code(404).send({ error: "Project not found" });
+ 
+-    const resources = await prisma.apiResource.findMany({
+-      where: { projectId },
+-      include: RESOURCE_COUNTS,
+-      orderBy: { createdAt: "desc" },
+-    });
+-    return reply.send({ resources: resources.map(serializeResource) });
++    const { data, error } = await supabase
++      .from("api_resources")
++      .select(RESOURCE_SELECT)
++      .eq("project_id", projectId)
++      .order("created_at", { ascending: false })
++      .returns<ResourceRow[]>();
++    if (error) return reply.code(500).send({ error: "Failed to load resources" });
++    return reply.send({ resources: (data ?? []).map(serializeResource) });
+   });
+ 
+   app.post("/projects/:projectId/resources", async (request, reply) => {
+@@ -46,10 +58,12 @@ export default async function resourceRoutes(app: FastifyInstance) {
+     const parsed = createSchema.safeParse(request.body);
+     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+ 
+-    const resource = await prisma.apiResource.create({
+-      data: { ...parsed.data, projectId },
+-      include: RESOURCE_COUNTS,
+-    });
++    const { data: resource, error } = await supabase
++      .from("api_resources")
++      .insert({ ...toRow(parsed.data), project_id: projectId })
++      .select(RESOURCE_SELECT)
++      .single<ResourceRow>();
++    if (error || !resource) return reply.code(500).send({ error: "Failed to create resource" });
+     return reply.code(201).send({ resource: serializeResource(resource) });
+   });
+ 
+@@ -61,11 +75,16 @@ export default async function resourceRoutes(app: FastifyInstance) {
+     const parsed = updateSchema.safeParse(request.body);
+     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+ 
+-    const resource = await prisma.apiResource.updateMany({ where: { id, projectId }, data: parsed.data });
+-    if (resource.count === 0) return reply.code(404).send({ error: "Resource not found" });
+-
+-    const updated = await prisma.apiResource.findUnique({ where: { id }, include: RESOURCE_COUNTS });
+-    return reply.send({ resource: serializeResource(updated!) });
++    const { data: resource, error } = await supabase
++      .from("api_resources")
++      .update({ ...toRow(parsed.data), updated_at: new Date().toISOString() })
++      .eq("id", id)
++      .eq("project_id", projectId)
++      .select(RESOURCE_SELECT)
++      .maybeSingle<ResourceRow>();
++    if (error) return reply.code(500).send({ error: "Failed to update resource" });
++    if (!resource) return reply.code(404).send({ error: "Resource not found" });
++    return reply.send({ resource: serializeResource(resource) });
+   });
+ 
+   app.delete("/projects/:projectId/resources/:id", async (request, reply) => {
+@@ -73,8 +92,14 @@ export default async function resourceRoutes(app: FastifyInstance) {
+     const role = await getProjectRole(request.userId, projectId);
+     if (!roleAtLeast(role, "editor")) return reply.code(404).send({ error: "Project not found" });
+ 
+-    const result = await prisma.apiResource.deleteMany({ where: { id, projectId } });
+-    if (result.count === 0) return reply.code(404).send({ error: "Resource not found" });
++    const { data, error } = await supabase
++      .from("api_resources")
++      .delete()
++      .eq("id", id)
++      .eq("project_id", projectId)
++      .select("id");
++    if (error) return reply.code(500).send({ error: "Failed to delete resource" });
++    if (!data || data.length === 0) return reply.code(404).send({ error: "Resource not found" });
+     return reply.code(204).send();
+   });
+ 
+@@ -83,18 +108,23 @@ export default async function resourceRoutes(app: FastifyInstance) {
+     const role = await getProjectRole(request.userId, projectId);
+     if (!roleAtLeast(role, "viewer")) return reply.code(404).send({ error: "Project not found" });
+ 
+-    const resource = await prisma.apiResource.findFirst({ where: { id, projectId } });
+-    if (!resource) return reply.code(404).send({ error: "Resource not found" });
++    const { data: resource, error: fetchError } = await supabase
++      .from("api_resources")
++      .select("url, auth_type, auth_credential")
++      .eq("id", id)
++      .eq("project_id", projectId)
++      .maybeSingle();
++    if (fetchError || !resource) return reply.code(404).send({ error: "Resource not found" });
+ 
+     const startedAt = Date.now();
+     let status: "healthy" | "error" = "error";
+     try {
+       const url = assertPublicHttpUrl(resource.url);
+       const headers: Record<string, string> = {};
+-      if (resource.authType === "bearer" && resource.authCredential) {
+-        headers.Authorization = `Bearer ${resource.authCredential}`;
+-      } else if (resource.authType === "api_key" && resource.authCredential) {
+-        headers["X-API-Key"] = resource.authCredential;
++      if (resource.auth_type === "bearer" && resource.auth_credential) {
++        headers.Authorization = `Bearer ${resource.auth_credential}`;
++      } else if (resource.auth_type === "api_key" && resource.auth_credential) {
++        headers["X-API-Key"] = resource.auth_credential;
+       }
+       const controller = new AbortController();
+       const timeout = setTimeout(() => controller.abort(), 8000);
+@@ -106,11 +136,13 @@ export default async function resourceRoutes(app: FastifyInstance) {
+     }
+     const latencyMs = Date.now() - startedAt;
+ 
+-    const updated = await prisma.apiResource.update({
+-      where: { id },
+-      data: { status, lastTestedAt: new Date(), lastTestLatencyMs: latencyMs },
+-      include: RESOURCE_COUNTS,
+-    });
++    const { data: updated, error } = await supabase
++      .from("api_resources")
++      .update({ status, last_tested_at: new Date().toISOString(), last_test_latency_ms: latencyMs })
++      .eq("id", id)
++      .select(RESOURCE_SELECT)
++      .single<ResourceRow>();
++    if (error || !updated) return reply.code(500).send({ error: "Failed to update resource" });
+     return reply.send({ resource: serializeResource(updated) });
+   });
+ }
+diff --git a/apps/api/src/routes/team.ts b/apps/api/src/routes/team.ts
+index 1f21e3d..4297706 100644
+--- a/apps/api/src/routes/team.ts
++++ b/apps/api/src/routes/team.ts
+@@ -1,8 +1,8 @@
+ import type { FastifyInstance } from "fastify";
+ import { z } from "zod";
+ import { getProjectRole, roleAtLeast } from "../lib/authz.js";
+-import { prisma } from "../lib/prisma.js";
+-import { serializeTeamMember } from "../lib/serialize.js";
++import { serializeTeamMember, type TeamMemberRow } from "../lib/serialize.js";
++import { supabase } from "../lib/supabase.js";
+ 
+ const inviteSchema = z.object({
+   name: z.string().trim().min(1, "Enter a name"),
+@@ -22,8 +22,14 @@ export default async function teamRoutes(app: FastifyInstance) {
+     const role = await getProjectRole(request.userId, projectId);
+     if (!roleAtLeast(role, "viewer")) return reply.code(404).send({ error: "Project not found" });
+ 
+-    const members = await prisma.projectMember.findMany({ where: { projectId }, orderBy: { invitedAt: "asc" } });
+-    return reply.send({ team: members.map(serializeTeamMember) });
++    const { data, error } = await supabase
++      .from("project_members")
++      .select("*")
++      .eq("project_id", projectId)
++      .order("invited_at", { ascending: true })
++      .returns<TeamMemberRow[]>();
++    if (error) return reply.code(500).send({ error: "Failed to load team" });
++    return reply.send({ team: (data ?? []).map(serializeTeamMember) });
+   });
+ 
+   app.post("/projects/:projectId/team", async (request, reply) => {
+@@ -34,15 +40,15 @@ export default async function teamRoutes(app: FastifyInstance) {
+     const parsed = inviteSchema.safeParse(request.body);
+     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+ 
+-    const existing = await prisma.projectMember.findUnique({
+-      where: { projectId_email: { projectId, email: parsed.data.email } },
+-    });
+-    if (existing) return reply.code(409).send({ error: "That person is already on the team" });
+-
+-    const linkedUser = await prisma.user.findUnique({ where: { email: parsed.data.email } });
+-    const member = await prisma.projectMember.create({
+-      data: { ...parsed.data, projectId, userId: linkedUser?.id },
+-    });
++    const { data: member, error } = await supabase
++      .from("project_members")
++      .insert({ project_id: projectId, name: parsed.data.name, email: parsed.data.email, role: parsed.data.role })
++      .select("*")
++      .single<TeamMemberRow>();
++    if (error) {
++      if (error.code === "23505") return reply.code(409).send({ error: "That person is already on the team" });
++      return reply.code(500).send({ error: "Failed to invite team member" });
++    }
+     return reply.code(201).send({ member: serializeTeamMember(member) });
+   });
+ 
+@@ -54,15 +60,30 @@ export default async function teamRoutes(app: FastifyInstance) {
+     const parsed = updateSchema.safeParse(request.body);
+     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+ 
+-    const target = await prisma.projectMember.findFirst({ where: { id, projectId } });
++    const { data: target } = await supabase
++      .from("project_members")
++      .select("role")
++      .eq("id", id)
++      .eq("project_id", projectId)
++      .maybeSingle();
+     if (!target) return reply.code(404).send({ error: "Team member not found" });
+ 
+     if (target.role === "owner" && parsed.data.role !== "owner") {
+-      const ownerCount = await prisma.projectMember.count({ where: { projectId, role: "owner" } });
+-      if (ownerCount <= 1) return reply.code(400).send({ error: "A project must have at least one owner" });
++      const { count } = await supabase
++        .from("project_members")
++        .select("id", { count: "exact", head: true })
++        .eq("project_id", projectId)
++        .eq("role", "owner");
++      if ((count ?? 0) <= 1) return reply.code(400).send({ error: "A project must have at least one owner" });
+     }
+ 
+-    const member = await prisma.projectMember.update({ where: { id }, data: { role: parsed.data.role } });
++    const { data: member, error } = await supabase
++      .from("project_members")
++      .update({ role: parsed.data.role })
++      .eq("id", id)
++      .select("*")
++      .single<TeamMemberRow>();
++    if (error || !member) return reply.code(500).send({ error: "Failed to update team member" });
+     return reply.send({ member: serializeTeamMember(member) });
+   });
+ 
+@@ -71,11 +92,17 @@ export default async function teamRoutes(app: FastifyInstance) {
+     const role = await getProjectRole(request.userId, projectId);
+     if (!roleAtLeast(role, "owner")) return reply.code(404).send({ error: "Project not found" });
+ 
+-    const target = await prisma.projectMember.findFirst({ where: { id, projectId } });
++    const { data: target } = await supabase
++      .from("project_members")
++      .select("role")
++      .eq("id", id)
++      .eq("project_id", projectId)
++      .maybeSingle();
+     if (!target) return reply.code(404).send({ error: "Team member not found" });
+     if (target.role === "owner") return reply.code(400).send({ error: "Remove another owner first" });
+ 
+-    await prisma.projectMember.delete({ where: { id } });
++    const { error } = await supabase.from("project_members").delete().eq("id", id);
++    if (error) return reply.code(500).send({ error: "Failed to remove team member" });
+     return reply.code(204).send();
+   });
+ }
+diff --git a/apps/api/src/routes/widgets.ts b/apps/api/src/routes/widgets.ts
+index 45ec30f..6e4ce01 100644
+--- a/apps/api/src/routes/widgets.ts
++++ b/apps/api/src/routes/widgets.ts
+@@ -1,10 +1,10 @@
+ import type { FastifyInstance } from "fastify";
+ import { z } from "zod";
+ import { getProjectRole, roleAtLeast } from "../lib/authz.js";
+-import { prisma } from "../lib/prisma.js";
+-import { serializeWidget } from "../lib/serialize.js";
++import { serializeWidget, type WidgetRow } from "../lib/serialize.js";
++import { supabase } from "../lib/supabase.js";
+ 
+-const WIDGET_INCLUDE = { resource: true } as const;
++const WIDGET_SELECT = "*, resource:api_resources(id, name)";
+ 
+ const createSchema = z.object({
+   name: z.string().trim().min(1, "Enter a widget name"),
+@@ -26,6 +26,17 @@ const createSchema = z.object({
+ 
+ const updateSchema = createSchema.partial();
+ 
++function toRow(input: Partial<z.infer<typeof createSchema>>) {
++  const row: Record<string, unknown> = {};
++  if (input.name !== undefined) row.name = input.name;
++  if (input.type !== undefined) row.type = input.type;
++  if (input.isTemplate !== undefined) row.is_template = input.isTemplate;
++  if (input.resourceId !== undefined) row.resource_id = input.resourceId;
++  if (input.mapping !== undefined) row.mapping = input.mapping;
++  if (input.fineTune !== undefined) row.fine_tune = input.fineTune;
++  return row;
++}
++
+ export default async function widgetRoutes(app: FastifyInstance) {
+   app.addHook("preHandler", app.authenticate);
+ 
+@@ -34,12 +45,14 @@ export default async function widgetRoutes(app: FastifyInstance) {
+     const role = await getProjectRole(request.userId, projectId);
+     if (!roleAtLeast(role, "viewer")) return reply.code(404).send({ error: "Project not found" });
+ 
+-    const widgets = await prisma.widget.findMany({
+-      where: { projectId },
+-      include: WIDGET_INCLUDE,
+-      orderBy: { updatedAt: "desc" },
+-    });
+-    return reply.send({ widgets: widgets.map(serializeWidget) });
++    const { data, error } = await supabase
++      .from("widgets")
++      .select(WIDGET_SELECT)
++      .eq("project_id", projectId)
++      .order("updated_at", { ascending: false })
++      .returns<WidgetRow[]>();
++    if (error) return reply.code(500).send({ error: "Failed to load widgets" });
++    return reply.send({ widgets: (data ?? []).map(serializeWidget) });
+   });
+ 
+   app.post("/projects/:projectId/widgets", async (request, reply) => {
+@@ -51,17 +64,21 @@ export default async function widgetRoutes(app: FastifyInstance) {
+     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+ 
+     if (parsed.data.resourceId) {
+-      const resource = await prisma.apiResource.findFirst({
+-        where: { id: parsed.data.resourceId, projectId },
+-      });
++      const { data: resource } = await supabase
++        .from("api_resources")
++        .select("id")
++        .eq("id", parsed.data.resourceId)
++        .eq("project_id", projectId)
++        .maybeSingle();
+       if (!resource) return reply.code(400).send({ error: "Resource not found in this project" });
+     }
+ 
+-    const { isTemplate, resourceId, mapping, fineTune, ...rest } = parsed.data;
+-    const widget = await prisma.widget.create({
+-      data: { ...rest, projectId, isTemplate, resourceId, mapping, fineTune },
+-      include: WIDGET_INCLUDE,
+-    });
++    const { data: widget, error } = await supabase
++      .from("widgets")
++      .insert({ ...toRow(parsed.data), project_id: projectId })
++      .select(WIDGET_SELECT)
++      .single<WidgetRow>();
++    if (error || !widget) return reply.code(500).send({ error: "Failed to create widget" });
+     return reply.code(201).send({ widget: serializeWidget(widget) });
+   });
+ 
+@@ -73,15 +90,15 @@ export default async function widgetRoutes(app: FastifyInstance) {
+     const parsed = updateSchema.safeParse(request.body);
+     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+ 
+-    const existing = await prisma.widget.findFirst({ where: { id, projectId } });
+-    if (!existing) return reply.code(404).send({ error: "Widget not found" });
+-
+-    const { isTemplate, resourceId, mapping, fineTune, ...rest } = parsed.data;
+-    const widget = await prisma.widget.update({
+-      where: { id },
+-      data: { ...rest, isTemplate, resourceId, mapping, fineTune },
+-      include: WIDGET_INCLUDE,
+-    });
++    const { data: widget, error } = await supabase
++      .from("widgets")
++      .update({ ...toRow(parsed.data), updated_at: new Date().toISOString() })
++      .eq("id", id)
++      .eq("project_id", projectId)
++      .select(WIDGET_SELECT)
++      .maybeSingle<WidgetRow>();
++    if (error) return reply.code(500).send({ error: "Failed to update widget" });
++    if (!widget) return reply.code(404).send({ error: "Widget not found" });
+     return reply.send({ widget: serializeWidget(widget) });
+   });
+ 
+@@ -90,8 +107,14 @@ export default async function widgetRoutes(app: FastifyInstance) {
+     const role = await getProjectRole(request.userId, projectId);
+     if (!roleAtLeast(role, "editor")) return reply.code(404).send({ error: "Project not found" });
+ 
+-    const result = await prisma.widget.deleteMany({ where: { id, projectId } });
+-    if (result.count === 0) return reply.code(404).send({ error: "Widget not found" });
++    const { data, error } = await supabase
++      .from("widgets")
++      .delete()
++      .eq("id", id)
++      .eq("project_id", projectId)
++      .select("id");
++    if (error) return reply.code(500).send({ error: "Failed to delete widget" });
++    if (!data || data.length === 0) return reply.code(404).send({ error: "Widget not found" });
+     return reply.code(204).send();
+   });
+ }
+diff --git a/apps/api/src/server.ts b/apps/api/src/server.ts
+index 7913e10..4f9b78a 100644
+--- a/apps/api/src/server.ts
++++ b/apps/api/src/server.ts
+@@ -1,8 +1,7 @@
+ import cors from "@fastify/cors";
+ import Fastify from "fastify";
+ import { env } from "./lib/env.js";
+-import authPlugin from "./plugins/auth.js";
+-import authRoutes from "./routes/auth.js";
++import supabaseAuthPlugin from "./plugins/supabaseAuth.js";
+ import billingRoutes from "./routes/billing.js";
+ import dashboardRoutes, { publicDashboardRoutes } from "./routes/dashboards.js";
+ import projectRoutes from "./routes/projects.js";
+@@ -13,11 +12,14 @@ import widgetRoutes from "./routes/widgets.js";
+ const app = Fastify({ logger: true, trustProxy: true });
+ 
+ await app.register(cors, { origin: env.CORS_ORIGIN, credentials: true });
+-await app.register(authPlugin);
++await app.register(supabaseAuthPlugin);
+ 
+ app.get("/health", async () => ({ ok: true }));
+ 
+-await app.register(authRoutes);
++app.get("/auth/me", { preHandler: app.authenticate }, async (request, reply) => {
++  return reply.send({ user: { id: request.userId, email: request.userEmail, name: request.userName } });
++});
++
+ await app.register(projectRoutes);
+ await app.register(resourceRoutes);
+ await app.register(widgetRoutes);
+diff --git a/package.json b/package.json
+index 8473a86..7fd4b2d 100644
+--- a/package.json
++++ b/package.json
+@@ -7,9 +7,13 @@
+     "apps/api"
+   ],
+   "scripts": {
++    "setup": "supabase db push",
+     "dev:web": "npm run dev --workspace apps/web",
+     "dev:api": "npm run dev --workspace apps/api",
+     "build:web": "npm run build --workspace apps/web",
+     "build:api": "npm run build --workspace apps/api"
++  },
++  "devDependencies": {
++    "supabase": "^2.10.0"
+   }
+ }
+diff --git a/supabase/config.toml b/supabase/config.toml
+new file mode 100644
+index 0000000..2f85d87
+--- /dev/null
++++ b/supabase/config.toml
+@@ -0,0 +1 @@
++project_id = "aidi-studio"
+diff --git a/supabase/migrations/20260709194625_init.sql b/supabase/migrations/20260709194625_init.sql
+new file mode 100644
+index 0000000..56b2735
+--- /dev/null
++++ b/supabase/migrations/20260709194625_init.sql
+@@ -0,0 +1,178 @@
++-- AiDi Studio app schema. auth.users is managed by Supabase Auth already.
++
++create type plan as enum ('free', 'pro', 'team', 'enterprise');
++create type project_role as enum ('owner', 'editor', 'viewer');
++create type auth_type as enum ('bearer', 'api_key', 'oauth', 'none');
++create type resource_status as enum ('healthy', 'error');
++create type imported_from as enum ('postman', 'openapi', 'curl', 'manual');
++create type widget_type as enum ('line', 'bar', 'stat', 'table', 'donut', 'map');
++create type dashboard_status as enum ('draft', 'published');
++create type invoice_status as enum ('paid', 'failed');
++create type billing_status as enum ('active', 'past_due', 'canceled', 'trialing');
++
++create table projects (
++  id uuid primary key default gen_random_uuid(),
++  name text not null,
++  icon text not null default 'box',
++  color text not null default '#7C5CFC',
++  plan plan not null default 'free',
++  owner_id uuid not null references auth.users(id) on delete cascade,
++  created_at timestamptz not null default now(),
++  updated_at timestamptz not null default now()
++);
++create index projects_owner_id_idx on projects(owner_id);
++
++create table project_members (
++  id uuid primary key default gen_random_uuid(),
++  project_id uuid not null references projects(id) on delete cascade,
++  user_id uuid references auth.users(id) on delete set null,
++  name text not null,
++  email text not null,
++  role project_role not null default 'viewer',
++  invited_at timestamptz not null default now(),
++  unique (project_id, email)
++);
++create index project_members_user_id_idx on project_members(user_id);
++
++create table api_resources (
++  id uuid primary key default gen_random_uuid(),
++  project_id uuid not null references projects(id) on delete cascade,
++  name text not null,
++  url text not null,
++  method text not null default 'GET',
++  auth_type auth_type not null default 'none',
++  auth_credential text,
++  status resource_status not null default 'healthy',
++  last_tested_at timestamptz,
++  last_test_latency_ms integer,
++  imported_from imported_from not null default 'manual',
++  created_at timestamptz not null default now(),
++  updated_at timestamptz not null default now()
++);
++create index api_resources_project_id_idx on api_resources(project_id);
++
++create table widgets (
++  id uuid primary key default gen_random_uuid(),
++  project_id uuid not null references projects(id) on delete cascade,
++  name text not null,
++  type widget_type not null,
++  is_template boolean not null default false,
++  resource_id uuid references api_resources(id) on delete set null,
++  mapping jsonb,
++  fine_tune jsonb,
++  created_at timestamptz not null default now(),
++  updated_at timestamptz not null default now()
++);
++create index widgets_project_id_idx on widgets(project_id);
++create index widgets_resource_id_idx on widgets(resource_id);
++
++create table dashboards (
++  id uuid primary key default gen_random_uuid(),
++  project_id uuid not null references projects(id) on delete cascade,
++  name text not null,
++  slug text not null unique,
++  status dashboard_status not null default 'draft',
++  share_password_hash text,
++  created_at timestamptz not null default now(),
++  updated_at timestamptz not null default now()
++);
++create index dashboards_project_id_idx on dashboards(project_id);
++
++create table dashboard_tiles (
++  id uuid primary key default gen_random_uuid(),
++  dashboard_id uuid not null references dashboards(id) on delete cascade,
++  widget_id uuid not null references widgets(id) on delete cascade,
++  position integer not null default 0,
++  col_span integer not null default 1,
++  row_span integer not null default 1
++);
++create index dashboard_tiles_dashboard_id_idx on dashboard_tiles(dashboard_id);
++create index dashboard_tiles_widget_id_idx on dashboard_tiles(widget_id);
++
++create table billing (
++  id uuid primary key default gen_random_uuid(),
++  project_id uuid not null unique references projects(id) on delete cascade,
++  plan plan not null default 'free',
++  status billing_status not null default 'active',
++  seats integer not null default 1,
++  price_per_seat integer not null default 0,
++  current_period_end timestamptz,
++  card_brand text,
++  card_last4 text,
++  card_exp text
++);
++
++create table invoices (
++  id uuid primary key default gen_random_uuid(),
++  billing_id uuid not null references billing(id) on delete cascade,
++  date timestamptz not null,
++  amount integer not null,
++  status invoice_status not null
++);
++create index invoices_billing_id_idx on invoices(billing_id);
++
++-- The Fastify API is the only client; it connects with the service_role key,
++-- which bypasses RLS by design. RLS is still enabled with no policies as a
++-- deny-by-default backstop for the anon/authenticated (PostgREST) roles.
++alter table projects enable row level security;
++alter table project_members enable row level security;
++alter table api_resources enable row level security;
++alter table widgets enable row level security;
++alter table dashboards enable row level security;
++alter table dashboard_tiles enable row level security;
++alter table billing enable row level security;
++alter table invoices enable row level security;
++
++-- Atomic multi-table writes that PostgREST can't express as a single request.
++
++create or replace function create_project(
++  p_name text,
++  p_icon text,
++  p_color text,
++  p_owner_id uuid,
++  p_owner_name text,
++  p_owner_email text
++) returns projects
++language plpgsql
++security definer
++set search_path = public
++as $$
++declare
++  v_project projects;
++begin
++  insert into projects (name, icon, color, owner_id)
++  values (p_name, p_icon, p_color, p_owner_id)
++  returning * into v_project;
++
++  insert into project_members (project_id, user_id, name, email, role)
++  values (v_project.id, p_owner_id, p_owner_name, p_owner_email, 'owner');
++
++  insert into billing (project_id) values (v_project.id);
++
++  return v_project;
++end;
++$$;
++
++create or replace function replace_dashboard_tiles(
++  p_dashboard_id uuid,
++  p_tiles jsonb
++) returns void
++language plpgsql
++security definer
++set search_path = public
++as $$
++begin
++  delete from dashboard_tiles where dashboard_id = p_dashboard_id;
++
++  insert into dashboard_tiles (dashboard_id, widget_id, position, col_span, row_span)
++  select
++    p_dashboard_id,
++    (t ->> 'widgetId')::uuid,
++    ord - 1,
++    (t ->> 'colSpan')::int,
++    (t ->> 'rowSpan')::int
++  from jsonb_array_elements(p_tiles) with ordinality as arr(t, ord);
++
++  update dashboards set updated_at = now() where id = p_dashboard_id;
++end;
++$$;

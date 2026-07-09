@@ -1,0 +1,93 @@
+diff --git a/README.md b/README.md
+index 4cecbcb..d8bbe1e 100644
+--- a/README.md
++++ b/README.md
+@@ -24,8 +24,8 @@ Dashboards, Team, and Billing, and enforces project-role authorization
+ - That token is sent to this API as `Authorization: Bearer <token>` on every
+   authenticated request.
+ - `src/plugins/supabaseAuth.ts` verifies it by calling Supabase's
+-  `GET /auth/v1/user` with the project's anon key — no shared JWT secret needed
+-  on this server. A 200 response means the token is valid; the returned user's
++  `GET /auth/v1/user` with the project's publishable key — no shared JWT secret
++  needed on this server. A 200 response means the token is valid; the returned user's
+   `id`/`email` become `request.userId`/`request.userEmail`.
+ - There's no local `users` table — `projects.owner_id` and
+   `project_members.user_id` are plain `auth.users.id` UUIDs, with a real FK to
+@@ -37,8 +37,8 @@ Dashboards, Team, and Billing, and enforces project-role authorization
+ 
+ ### How data access works
+ 
+-- `src/lib/supabase.ts` creates a Supabase client with the **service-role
+-  key**, which bypasses Row Level Security — this API is the trusted backend
++- `src/lib/supabase.ts` creates a Supabase client with the **secret key**,
++  which bypasses Row Level Security — this API is the trusted backend
+   and does its own authorization (`src/lib/authz.ts`) before every query, so
+   RLS is enabled on every table as a deny-by-default backstop but has no
+   permissive policies.
+@@ -75,8 +75,8 @@ Edit `.env`:
+ 
+ ```bash
+ SUPABASE_URL="https://wpnurprzcqgirtbuqtmj.supabase.co"
+-SUPABASE_ANON_KEY="sb_publishable_dIMTpZuPC6_eKH31jM9ISA_pTPnsRCZ"
+-SUPABASE_SERVICE_ROLE_KEY="..."   # Project Settings > API > service_role secret
++SUPABASE_PUBLISHABLE_KEY="sb_publishable_dIMTpZuPC6_eKH31jM9ISA_pTPnsRCZ"
++SUPABASE_SECRET_KEY="sb_secret_..."   # Project Settings > API > secret key (not the legacy service_role JWT)
+ ```
+ 
+ **3. Run it:**
+diff --git a/apps/api/.env.example b/apps/api/.env.example
+index d808d5f..83a499c 100644
+--- a/apps/api/.env.example
++++ b/apps/api/.env.example
+@@ -1,5 +1,5 @@
+ SUPABASE_URL="https://your-project-ref.supabase.co"
+-SUPABASE_ANON_KEY="your-anon-or-publishable-key"
+-SUPABASE_SERVICE_ROLE_KEY="your-service-role-secret-key"
++SUPABASE_PUBLISHABLE_KEY="sb_publishable_..."
++SUPABASE_SECRET_KEY="sb_secret_..."
+ PORT=4000
+ CORS_ORIGIN="http://localhost:5173"
+diff --git a/apps/api/src/lib/env.ts b/apps/api/src/lib/env.ts
+index 39e1af0..170acb7 100644
+--- a/apps/api/src/lib/env.ts
++++ b/apps/api/src/lib/env.ts
+@@ -2,8 +2,8 @@ import { z } from "zod";
+ 
+ const envSchema = z.object({
+   SUPABASE_URL: z.string().url(),
+-  SUPABASE_ANON_KEY: z.string().min(1),
+-  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
++  SUPABASE_PUBLISHABLE_KEY: z.string().min(1),
++  SUPABASE_SECRET_KEY: z.string().min(1),
+   PORT: z.coerce.number().default(4000),
+   CORS_ORIGIN: z.string().default("http://localhost:5173"),
+   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
+diff --git a/apps/api/src/lib/supabase.ts b/apps/api/src/lib/supabase.ts
+index 94e2c52..c6c1d81 100644
+--- a/apps/api/src/lib/supabase.ts
++++ b/apps/api/src/lib/supabase.ts
+@@ -1,9 +1,9 @@
+ import { createClient } from "@supabase/supabase-js";
+ import { env } from "./env.js";
+ 
+-// Service-role key bypasses RLS — this API is the trusted backend, so it
++// The secret key bypasses RLS — this API is the trusted backend, so it
+ // enforces project membership/role checks itself (see authz.ts) rather than
+ // relying on Postgres RLS policies.
+-export const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
++export const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SECRET_KEY, {
+   auth: { autoRefreshToken: false, persistSession: false },
+ });
+diff --git a/apps/api/src/plugins/supabaseAuth.ts b/apps/api/src/plugins/supabaseAuth.ts
+index 1328af4..844b76d 100644
+--- a/apps/api/src/plugins/supabaseAuth.ts
++++ b/apps/api/src/plugins/supabaseAuth.ts
+@@ -24,7 +24,7 @@ async function fetchSupabaseUser(token: string): Promise<SupabaseUser | null> {
+   let res: Response;
+   try {
+     res = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
+-      headers: { Authorization: `Bearer ${token}`, apikey: env.SUPABASE_ANON_KEY },
++      headers: { Authorization: `Bearer ${token}`, apikey: env.SUPABASE_PUBLISHABLE_KEY },
+     });
+   } catch {
+     return null;

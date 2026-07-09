@@ -1,112 +1,171 @@
-import type {
-  ApiResource,
-  Billing,
-  Dashboard,
-  DashboardTile,
-  Invoice,
-  Project,
-  ProjectMember,
-  User,
-  Widget,
-} from "@prisma/client";
+interface CountRow {
+  count: number;
+}
 
-export function serializeUser(user: User) {
+export interface ProjectRow {
+  id: string;
+  name: string;
+  icon: string;
+  color: string;
+  plan: string;
+  owner_id: string;
+  created_at: string;
+  dashboards?: CountRow[];
+  widgets?: CountRow[];
+  resources?: CountRow[];
+}
+
+export function serializeProject(p: ProjectRow) {
   return {
-    id: user.id,
-    email: user.email,
-    display_name: user.displayName,
-    email_verified: user.emailVerified,
-    totp_enabled: user.totpEnabled,
+    id: p.id,
+    name: p.name,
+    icon: p.icon,
+    color: p.color,
+    plan: p.plan,
+    owner_id: p.owner_id,
+    created_at: p.created_at,
+    dashboards: p.dashboards?.[0]?.count ?? 0,
+    widgets: p.widgets?.[0]?.count ?? 0,
+    resources: p.resources?.[0]?.count ?? 0,
   };
 }
 
-export function serializeProject(
-  project: Project & { _count: { dashboards: number; widgets: number; resources: number } },
-) {
+export interface ResourceRow {
+  id: string;
+  name: string;
+  url: string;
+  method: string;
+  auth_type: string;
+  status: string;
+  last_tested_at: string | null;
+  last_test_latency_ms: number | null;
+  imported_from: string;
+  widgets?: CountRow[];
+}
+
+export function serializeResource(r: ResourceRow) {
   return {
-    id: project.id,
-    name: project.name,
-    icon: project.icon,
-    color: project.color,
-    plan: project.plan,
-    owner_id: project.ownerId,
-    created_at: project.createdAt.toISOString(),
-    dashboards: project._count.dashboards,
-    widgets: project._count.widgets,
-    resources: project._count.resources,
+    id: r.id,
+    name: r.name,
+    url: r.url,
+    method: r.method,
+    auth_type: r.auth_type,
+    status: r.status,
+    last_tested_at: r.last_tested_at,
+    last_test_latency_ms: r.last_test_latency_ms,
+    imported_from: r.imported_from,
+    usedBy: r.widgets?.[0]?.count ?? 0,
   };
 }
 
-export function serializeResource(resource: ApiResource & { _count?: { widgets: number } }) {
+export interface WidgetRow {
+  id: string;
+  name: string;
+  type: string;
+  is_template: boolean;
+  resource_id: string | null;
+  resource: { id: string; name: string } | null;
+  mapping: unknown;
+  fine_tune: unknown;
+  updated_at: string;
+}
+
+export function serializeWidget(w: WidgetRow) {
   return {
-    id: resource.id,
-    name: resource.name,
-    url: resource.url,
-    method: resource.method,
-    auth_type: resource.authType,
-    status: resource.status,
-    last_tested_at: resource.lastTestedAt ? resource.lastTestedAt.toISOString() : null,
-    last_test_latency_ms: resource.lastTestLatencyMs,
-    imported_from: resource.importedFrom,
-    usedBy: resource._count?.widgets ?? 0,
+    id: w.id,
+    name: w.name,
+    type: w.type,
+    is_template: w.is_template,
+    resource: w.resource?.name ?? null,
+    resource_id: w.resource_id,
+    mapping: w.mapping ?? null,
+    fine_tune: w.fine_tune ?? null,
+    updated_at: w.updated_at,
   };
 }
 
-export function serializeWidget(widget: Widget & { resource: ApiResource | null }) {
+export interface DashboardTileRow {
+  widget_id: string;
+  position: number;
+  col_span: number;
+  row_span: number;
+}
+
+export interface DashboardRow {
+  id: string;
+  name: string;
+  slug: string;
+  status: string;
+  share_password_hash: string | null;
+  updated_at: string;
+  dashboard_tiles?: DashboardTileRow[];
+}
+
+export function serializeDashboard(d: DashboardRow) {
+  const tiles = [...(d.dashboard_tiles ?? [])].sort((a, b) => a.position - b.position);
   return {
-    id: widget.id,
-    name: widget.name,
-    type: widget.type,
-    is_template: widget.isTemplate,
-    resource: widget.resource?.name ?? null,
-    resource_id: widget.resourceId,
-    mapping: widget.mapping ?? null,
-    fine_tune: widget.fineTune ?? null,
-    updated_at: widget.updatedAt.toISOString(),
+    id: d.id,
+    name: d.name,
+    slug: d.slug,
+    status: d.status,
+    has_share_password: d.share_password_hash != null,
+    updated_at: d.updated_at,
+    widgetIds: tiles.map((t) => t.widget_id),
+    layout: tiles.map((t) => ({ id: t.widget_id, colSpan: t.col_span, rowSpan: t.row_span })),
   };
 }
 
-export function serializeDashboard(
-  dashboard: Dashboard & { tiles: (DashboardTile & { widget: Widget })[] },
-) {
+export interface TeamMemberRow {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  invited_at: string;
+}
+
+export function serializeTeamMember(m: TeamMemberRow) {
   return {
-    id: dashboard.id,
-    name: dashboard.name,
-    slug: dashboard.slug,
-    status: dashboard.status,
-    has_share_password: dashboard.sharePasswordHash != null,
-    updated_at: dashboard.updatedAt.toISOString(),
-    widgetIds: dashboard.tiles.sort((a, b) => a.position - b.position).map((t) => t.widgetId),
-    layout: dashboard.tiles
-      .sort((a, b) => a.position - b.position)
-      .map((t) => ({ id: t.widgetId, colSpan: t.colSpan, rowSpan: t.rowSpan })),
+    id: m.id,
+    name: m.name,
+    email: m.email,
+    role: m.role,
+    invited_at: m.invited_at,
   };
 }
 
-export function serializeTeamMember(member: ProjectMember) {
-  return {
-    id: member.id,
-    name: member.name,
-    email: member.email,
-    role: member.role,
-    invited_at: member.invitedAt.toISOString(),
-  };
+export interface InvoiceRow {
+  id: string;
+  date: string;
+  amount: number;
+  status: string;
 }
 
-export function serializeBilling(billing: Billing & { invoices: Invoice[] }) {
+export interface BillingRow {
+  plan: string;
+  status: string;
+  seats: number;
+  price_per_seat: number;
+  current_period_end: string | null;
+  card_brand: string | null;
+  card_last4: string | null;
+  card_exp: string | null;
+  invoices?: InvoiceRow[];
+}
+
+export function serializeBilling(b: BillingRow) {
   return {
-    plan: billing.plan,
-    status: billing.status,
-    seats: billing.seats,
-    pricePerSeat: billing.pricePerSeat,
-    current_period_end: billing.currentPeriodEnd ? billing.currentPeriodEnd.toISOString() : null,
+    plan: b.plan,
+    status: b.status,
+    seats: b.seats,
+    pricePerSeat: b.price_per_seat,
+    current_period_end: b.current_period_end,
     card:
-      billing.cardBrand && billing.cardLast4 && billing.cardExp
-        ? { brand: billing.cardBrand, last4: billing.cardLast4, exp: billing.cardExp }
+      b.card_brand && b.card_last4 && b.card_exp
+        ? { brand: b.card_brand, last4: b.card_last4, exp: b.card_exp }
         : null,
-    invoices: billing.invoices.map((inv) => ({
+    invoices: (b.invoices ?? []).map((inv) => ({
       id: inv.id,
-      date: inv.date.toISOString(),
+      date: inv.date,
       amount: inv.amount,
       status: inv.status,
     })),

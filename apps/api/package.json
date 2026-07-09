@@ -7,16 +7,11 @@
     "dev": "tsx watch --env-file=.env src/server.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node --env-file=.env dist/server.js",
-    "lint": "oxlint",
-    "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev",
-    "prisma:deploy": "prisma migrate deploy",
-    "prisma:seed": "tsx prisma/seed.ts"
+    "lint": "oxlint"
   },
   "dependencies": {
     "@fastify/cors": "^10.1.0",
-    "@fastify/jwt": "^10.2.0",
-    "@prisma/client": "^6.19.0",
+    "@supabase/supabase-js": "^2.48.1",
     "bcryptjs": "^2.4.3",
     "fastify": "^5.6.1",
     "fastify-plugin": "^5.1.0",
@@ -26,7 +21,6 @@
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^24.13.3",
     "oxlint": "^1.71.0",
-    "prisma": "^6.19.0",
     "tsx": "^4.19.2",
     "typescript": "~5.9.3"
   }
