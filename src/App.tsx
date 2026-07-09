@@ -1,88 +1,32 @@
-import React, { useState } from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { ActiveTab } from "./types";
-import LandingPage from "./components/LandingPage";
-import SignIn from "./components/SignIn";
-import DashboardShell from "./components/DashboardShell";
-import ProjectsView from "./components/ProjectsView";
-import DashboardsView from "./components/DashboardsView";
-import WidgetsView from "./components/WidgetsView";
-import SchemaConverterView from "./components/SchemaConverterView";
-import EmbedView from "./components/EmbedView";
-import TeamView from "./components/TeamView";
-import SettingsView from "./components/SettingsView";
-
-// Initialize Tanstack React Query Client
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      refetchOnWindowFocus: false,
-      retry: 1,
-    },
-  },
-});
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import Landing from "@/pages/Landing";
+import Login from "@/pages/Login";
+import Projects from "@/pages/Projects";
+import DashboardsList from "@/pages/DashboardsList";
+import ApiLibrary from "@/pages/ApiLibrary";
+import WidgetsLibrary from "@/pages/WidgetsLibrary";
+import WidgetBuilder from "@/pages/WidgetBuilder";
+import DashboardCanvas from "@/pages/DashboardCanvas";
+import PublicView from "@/pages/PublicView";
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<ActiveTab>("landing");
-  const [selectedProjectId, setSelectedProjectId] = useState<string>("marketing");
-  const [selectedDashboardId, setSelectedDashboardId] = useState<string>("executive");
-
-  const handleNavigateToDashboards = (projectId: string) => {
-    setSelectedProjectId(projectId);
-    setActiveTab("dashboards");
-  };
-
-  const handleNavigateToWidgets = (dashboardId: string) => {
-    setSelectedDashboardId(dashboardId);
-    setActiveTab("widgets");
-  };
-
-  // Render core views depending on navigation state
-  const renderTabContent = () => {
-    switch (activeTab) {
-      case "projects":
-        return <ProjectsView onNavigateToDashboards={handleNavigateToDashboards} />;
-      case "dashboards":
-        return (
-          <DashboardsView
-            projectId={selectedProjectId}
-            onBackToProjects={() => setActiveTab("projects")}
-            onNavigateToWidgets={handleNavigateToWidgets}
-          />
-        );
-      case "widgets":
-        return (
-          <WidgetsView
-            selectedDashboardId={selectedDashboardId}
-            onBackToDashboards={() => setActiveTab("dashboards")}
-          />
-        );
-      case "schema":
-        return <SchemaConverterView />;
-      case "embed":
-        return <EmbedView />;
-      case "team":
-        return <TeamView />;
-      case "settings":
-        return <SettingsView />;
-      default:
-        return <ProjectsView onNavigateToDashboards={handleNavigateToDashboards} />;
-    }
-  };
-
-  if (activeTab === "landing") {
-    return <LandingPage onNavigate={setActiveTab} />;
-  }
-
-  if (activeTab === "signin") {
-    return <SignIn onNavigate={setActiveTab} />;
-  }
-
   return (
-    <QueryClientProvider client={queryClient}>
-      <DashboardShell activeTab={activeTab} onTabChange={setActiveTab}>
-        {renderTabContent()}
-      </DashboardShell>
-    </QueryClientProvider>
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Landing />} />
+        <Route path="/login" element={<Login />} />
+
+        <Route path="/app/projects" element={<Projects />} />
+        <Route path="/app/projects/:projectId/dashboards" element={<DashboardsList />} />
+        <Route path="/app/projects/:projectId/dashboards/:dashboardId" element={<DashboardCanvas />} />
+        <Route path="/app/projects/:projectId/api-library" element={<ApiLibrary />} />
+        <Route path="/app/projects/:projectId/widgets" element={<WidgetsLibrary />} />
+        <Route path="/app/projects/:projectId/widgets/new" element={<WidgetBuilder />} />
+
+        <Route path="/d/:slug" element={<PublicView />} />
+
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </BrowserRouter>
   );
 }

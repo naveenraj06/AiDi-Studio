@@ -1,6 +1,0 @@
-{
-  "name": "AiDi Studio",
-  "description": "An AI-Native Analytics Platform. Build intelligent widgets, compose responsive dashboards, process datasets, and dynamically convert schemas.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}
