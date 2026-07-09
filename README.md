@@ -55,23 +55,14 @@ Dashboards, Team, and Billing, and enforces project-role authorization
 
 Project: `wpnurprzcqgirtbuqtmj` (`https://wpnurprzcqgirtbuqtmj.supabase.co`).
 
-**1. Apply the schema** (one-time, from a machine that can reach `*.supabase.co`
-— this repo's own sandbox environment can't, see below):
-
-```bash
-npx supabase login                                    # or: export SUPABASE_ACCESS_TOKEN=sbp_...
-npx supabase link --project-ref wpnurprzcqgirtbuqtmj
-npm run setup                                          # = supabase db push, applies supabase/migrations/*
-```
-
-**2. Configure the API:**
+**1. Configure the API:**
 
 ```bash
 cd apps/api
 cp .env.example .env
 ```
 
-Edit `.env`:
+Edit `apps/api/.env`:
 
 ```bash
 SUPABASE_URL="https://wpnurprzcqgirtbuqtmj.supabase.co"
@@ -79,16 +70,32 @@ SUPABASE_PUBLISHABLE_KEY="sb_publishable_dIMTpZuPC6_eKH31jM9ISA_pTPnsRCZ"
 SUPABASE_SECRET_KEY="sb_secret_..."   # Project Settings > API > secret key (not the legacy service_role JWT)
 ```
 
+**2. Apply the schema** (one-time, from a machine that can reach `*.supabase.co`
+— this repo's own sandbox environment can't, see below):
+
+```bash
+npx supabase login   # or add SUPABASE_ACCESS_TOKEN=sbp_... to apps/api/.env (https://supabase.com/dashboard/account/tokens)
+npm run setup         # from the repo root
+```
+
+`npm run setup` (`scripts/setup-supabase.sh`) reads `apps/api/.env`, derives
+the project ref from `SUPABASE_URL`, checks CLI auth, links, then runs
+`supabase db push` to apply everything in `supabase/migrations/`. It `cd`s to
+the repo root itself, so it's safe to invoke from anywhere. If `supabase link`
+needs the database password non-interactively, add `SUPABASE_DB_PASSWORD=...`
+to `apps/api/.env` too. For verbose CLI output on failure, re-run with
+`SETUP_DEBUG=1 npm run setup`.
+
+Run `npm run setup` once per environment before starting the dev or
+production server for the first time, and again whenever
+`supabase/migrations/` changes.
+
 **3. Run it:**
 
 ```bash
 npm install
 npm run dev    # http://localhost:4000
 ```
-
-Run `npm run setup` (from the repo root) once per environment before starting
-the dev or production server for the first time, and again whenever
-`supabase/migrations/` changes.
 
 Sign up / log in via Supabase (dashboard, `supabase-js`, or the REST
 `/auth/v1/signup` and `/auth/v1/token?grant_type=password` endpoints) to get an

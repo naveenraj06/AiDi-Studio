@@ -7,7 +7,7 @@
     "apps/api"
   ],
   "scripts": {
-    "setup": "supabase db push",
+    "setup": "bash scripts/setup-supabase.sh",
     "dev:web": "npm run dev --workspace apps/web",
     "dev:api": "npm run dev --workspace apps/api",
     "build:web": "npm run build --workspace apps/web",
