@@ -1,59 +1,61 @@
-# AiDi Studio — frontend prototype
+# AiDi Studio
 
-An interactive React implementation of the AiDi Studio UI, built from the `Master spec requirements`
-Claude Design bundle (see `../README.md`, `../chats/`, `../project/*.dc.html`, `../project/uploads/MASTER-SPEC.md`).
+Monorepo with two workspaces:
 
-Stack: Vite + React 19 + TypeScript + Tailwind CSS v4 + shadcn/ui (Radix primitives) + react-router-dom,
-matching the reference architecture described in MASTER-SPEC.md §7.
+```
+apps/web/   React + Vite frontend (see apps/web/README.md)
+apps/api/   Fastify + TypeScript + Postgres backend
+```
 
-## Running
+## Backend (`apps/api`)
+
+Real auth (JWT + DB-backed sessions, bcrypt) and CRUD for Projects, API Resources,
+Widgets, Dashboards, Team, and Billing, backed by Postgres via Prisma.
+
+### Setup
 
 ```bash
+cd apps/api
+cp .env.example .env   # point DATABASE_URL at your Postgres instance
 npm install
-npm run dev
+npm run prisma:migrate  # applies schema, generates Prisma client
+npm run prisma:seed     # optional: creates demo@aidistudio.dev / password123
+npm run dev              # http://localhost:4000
 ```
 
-Sign up (any name/email/password ≥ 8 chars) or use the "Simulate: click verification link" button on the
-verify-email screen to get straight into the app. All data is in-memory mock state seeded from the design
-bundle's sample dataset (3 projects, API resources, widgets, dashboards, team members, billing) — nothing
-persists to a backend, since none exists yet.
+### Auth flow
 
-## What's implemented
+There's no email provider wired up yet, so verification and password-reset links
+are logged to the server console and — outside `NODE_ENV=production` — also
+returned directly in the API response (`verification_token` / `reset_token`), so
+you can drive the flow without SMTP:
 
-Every screen from the design bundle, fully interactive with mock data:
+1. `POST /auth/signup` → creates an unverified user, returns a verification token
+2. `POST /auth/verify-email { token }` → verifies the user, returns a session `access_token`
+3. `POST /auth/login { email, password }` → requires a verified email, returns `access_token`
+4. All authenticated routes take `Authorization: Bearer <access_token>`
 
-- Landing, Signup, Login, Verify email, Forgot/Reset password
-- Projects list + create
-- Dashboards list + create
-- Dashboard canvas: drag-to-reorder, width/height resize, add/remove widgets, publish modal
-- API Resources: table, test-connection simulation, import (Manual/Postman/OpenAPI/cURL tabs)
-- Widgets library (regular + templates)
-- 4-step widget builder: pick resource → AI suggestion (deterministic rule-based, mirrors the AI
-  Integration Spec's fallback logic in MASTER-SPEC.md §9) → fine-tune → preview & save
-- Team (per-project members, invite, role change, remove)
-- Account settings (profile, password, 2FA setup + backup codes, session list)
-- Billing (plans, payment method, invoice history)
-- Embed & SDK reference
-- Public dashboard view, including password-unlock and not-found states
+### Routes
 
-## What's out of scope
+- `POST /auth/signup|login|logout|logout-all|verify-email|resend-verification|forgot-password|reset-password`, `GET /auth/me`
+- `GET|POST /projects`, `GET|PATCH|DELETE /projects/:id`
+- `GET|POST /projects/:projectId/resources`, `PATCH|DELETE /projects/:projectId/resources/:id`, `POST .../resources/:id/test-connection`
+- `GET|POST /projects/:projectId/widgets`, `PATCH|DELETE /projects/:projectId/widgets/:id`
+- `GET|POST /projects/:projectId/dashboards`, `GET|PATCH|DELETE /projects/:projectId/dashboards/:id`, `PUT .../dashboards/:id/tiles`
+- `GET /public/dashboards/:slug` (published dashboards; `?password=` if share-protected)
+- `GET|POST /projects/:projectId/team`, `PATCH|DELETE /projects/:projectId/team/:id`
+- `GET|PATCH /projects/:projectId/billing`
 
-Per MASTER-SPEC.md §19 and the frontend-only build scope agreed with the user: no real backend, auth
-server, Postgres, Stripe, or LLM orchestration. `src/context/AppContext.tsx` is the seam where real API
-calls would replace the in-memory mock state.
+Authorization is role-based per project (`owner` > `editor` > `viewer`), derived
+from project ownership or `ProjectMember` rows.
 
-## Structure
+### Out of scope for this milestone
 
-```
-src/
-  components/ui/            shadcn/ui primitives (button, card, input, select, switch, dialog, ...)
-  components/widgets/       WidgetRenderer (mini chart preview) + type metadata
-  components/widget-builder/  Step1-4 components + AI suggestion heuristic
-  components/dashboard-canvas/  tile card, add-widget dialog, publish dialog
-  components/resources/     import-resource dialog
-  context/AppContext.tsx    session/auth + all mock data + mutator actions + toast
-  data/mockData.ts          seed dataset
-  layouts/AppShell.tsx      sidebar + outlet
-  pages/                    one file per route
-  routes/guards.tsx         RequireAuth / PublicOnly
-```
+No Stripe integration (billing endpoints just persist plan/seat records), no real
+email delivery, no TOTP/2FA verification, no LLM-backed widget suggestions — the
+frontend's `suggestFor.ts` heuristic isn't reproduced server-side. `apps/web/src/context/AppContext.tsx`
+is still on in-memory mock data; wiring it to this API is the next step.
+
+## Frontend (`apps/web`)
+
+See `apps/web/README.md`.

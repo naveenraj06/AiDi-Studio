@@ -1,0 +1,255 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Plan {
+  free
+  pro
+  team
+  enterprise
+}
+
+enum ProjectRole {
+  owner
+  editor
+  viewer
+}
+
+enum AuthType {
+  bearer
+  api_key
+  oauth
+  none
+}
+
+enum ResourceStatus {
+  healthy
+  error
+}
+
+enum ImportedFrom {
+  postman
+  openapi
+  curl
+  manual
+}
+
+enum WidgetType {
+  line
+  bar
+  stat
+  table
+  donut
+  map
+}
+
+enum DashboardStatus {
+  draft
+  published
+}
+
+enum InvoiceStatus {
+  paid
+  failed
+}
+
+enum BillingStatus {
+  active
+  past_due
+  canceled
+  trialing
+}
+
+model User {
+  id              String    @id @default(uuid())
+  email           String    @unique
+  passwordHash    String
+  displayName     String
+  emailVerified   Boolean   @default(false)
+  totpEnabled     Boolean   @default(false)
+  totpSecret      String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  ownedProjects       Project[]                @relation("ProjectOwner")
+  memberships         ProjectMember[]
+  sessions            Session[]
+  emailVerifications  EmailVerificationToken[]
+  passwordResets      PasswordResetToken[]
+}
+
+model Session {
+  id         String    @id @default(uuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String    @unique
+  userAgent  String?
+  ip         String?
+  createdAt  DateTime  @default(now())
+  expiresAt  DateTime
+  revokedAt  DateTime?
+
+  @@index([userId])
+}
+
+model EmailVerificationToken {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String   @unique
+  expiresAt  DateTime
+  usedAt     DateTime?
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+}
+
+model PasswordResetToken {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String   @unique
+  expiresAt  DateTime
+  usedAt     DateTime?
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Project {
+  id         String   @id @default(uuid())
+  name       String
+  icon       String   @default("box")
+  color      String   @default("#7C5CFC")
+  plan       Plan     @default(free)
+  ownerId    String
+  owner      User     @relation("ProjectOwner", fields: [ownerId], references: [id])
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  members    ProjectMember[]
+  resources  ApiResource[]
+  widgets    Widget[]
+  dashboards Dashboard[]
+  billing    Billing?
+
+  @@index([ownerId])
+}
+
+model ProjectMember {
+  id         String      @id @default(uuid())
+  projectId  String
+  project    Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId     String?
+  user       User?       @relation(fields: [userId], references: [id])
+  name       String
+  email      String
+  role       ProjectRole @default(viewer)
+  invitedAt  DateTime    @default(now())
+
+  @@unique([projectId, email])
+  @@index([userId])
+}
+
+model ApiResource {
+  id                  String         @id @default(uuid())
+  projectId           String
+  project             Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name                String
+  url                 String
+  method              String         @default("GET")
+  authType            AuthType       @default(none)
+  authCredential      String?
+  status              ResourceStatus @default(healthy)
+  lastTestedAt         DateTime?
+  lastTestLatencyMs    Int?
+  importedFrom         ImportedFrom  @default(manual)
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  widgets              Widget[]
+
+  @@index([projectId])
+}
+
+model Widget {
+  id           String     @id @default(uuid())
+  projectId    String
+  project      Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name         String
+  type         WidgetType
+  isTemplate   Boolean    @default(false)
+  resourceId   String?
+  resource     ApiResource? @relation(fields: [resourceId], references: [id], onDelete: SetNull)
+  mapping      Json?
+  fineTune     Json?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  tiles        DashboardTile[]
+
+  @@index([projectId])
+  @@index([resourceId])
+}
+
+model Dashboard {
+  id                 String          @id @default(uuid())
+  projectId          String
+  project            Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name               String
+  slug               String          @unique
+  status             DashboardStatus @default(draft)
+  sharePasswordHash  String?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  tiles              DashboardTile[]
+
+  @@index([projectId])
+}
+
+model DashboardTile {
+  id           String    @id @default(uuid())
+  dashboardId  String
+  dashboard    Dashboard @relation(fields: [dashboardId], references: [id], onDelete: Cascade)
+  widgetId     String
+  widget       Widget    @relation(fields: [widgetId], references: [id], onDelete: Cascade)
+  position     Int       @default(0)
+  colSpan      Int       @default(1)
+  rowSpan      Int       @default(1)
+
+  @@index([dashboardId])
+  @@index([widgetId])
+}
+
+model Billing {
+  id                String        @id @default(uuid())
+  projectId         String        @unique
+  project           Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  plan              Plan          @default(free)
+  status            BillingStatus @default(active)
+  seats             Int           @default(1)
+  pricePerSeat      Int           @default(0)
+  currentPeriodEnd  DateTime?
+  cardBrand         String?
+  cardLast4         String?
+  cardExp           String?
+
+  invoices          Invoice[]
+}
+
+model Invoice {
+  id         String        @id @default(uuid())
+  billingId  String
+  billing    Billing       @relation(fields: [billingId], references: [id], onDelete: Cascade)
+  date       DateTime
+  amount     Int
+  status     InvoiceStatus
+
+  @@index([billingId])
+}
