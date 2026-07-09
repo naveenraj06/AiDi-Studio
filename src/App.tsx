@@ -1,32 +1,67 @@
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import Landing from "@/pages/Landing";
-import Login from "@/pages/Login";
-import Projects from "@/pages/Projects";
-import DashboardsList from "@/pages/DashboardsList";
-import ApiLibrary from "@/pages/ApiLibrary";
-import WidgetsLibrary from "@/pages/WidgetsLibrary";
-import WidgetBuilder from "@/pages/WidgetBuilder";
-import DashboardCanvas from "@/pages/DashboardCanvas";
-import PublicView from "@/pages/PublicView";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { AppProvider } from "@/context/AppContext";
+import { RequireAuth, PublicOnly } from "@/routes/guards";
+import AppShell from "@/layouts/AppShell";
 
-export default function App() {
+import LandingPage from "@/pages/LandingPage";
+import LoginPage from "@/pages/auth/LoginPage";
+import SignupPage from "@/pages/auth/SignupPage";
+import VerifyEmailPage from "@/pages/auth/VerifyEmailPage";
+import ForgotPasswordPage from "@/pages/auth/ForgotPasswordPage";
+import ResetPasswordPage from "@/pages/auth/ResetPasswordPage";
+
+import ProjectsPage from "@/pages/ProjectsPage";
+import DashboardsListPage from "@/pages/DashboardsListPage";
+import DashboardCanvasPage from "@/pages/DashboardCanvasPage";
+import ResourcesPage from "@/pages/ResourcesPage";
+import WidgetsLibraryPage from "@/pages/WidgetsLibraryPage";
+import WidgetBuilderPage from "@/pages/WidgetBuilderPage";
+import EmbedPage from "@/pages/EmbedPage";
+import TeamPage from "@/pages/TeamPage";
+import SettingsPage from "@/pages/SettingsPage";
+import BillingPage from "@/pages/BillingPage";
+
+import PublicDashboardPage from "@/pages/PublicDashboardPage";
+
+function App() {
   return (
     <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<Landing />} />
-        <Route path="/login" element={<Login />} />
+      <AppProvider>
+        <Routes>
+          <Route path="/" element={<Navigate to="/landing" replace />} />
 
-        <Route path="/app/projects" element={<Projects />} />
-        <Route path="/app/projects/:projectId/dashboards" element={<DashboardsList />} />
-        <Route path="/app/projects/:projectId/dashboards/:dashboardId" element={<DashboardCanvas />} />
-        <Route path="/app/projects/:projectId/api-library" element={<ApiLibrary />} />
-        <Route path="/app/projects/:projectId/widgets" element={<WidgetsLibrary />} />
-        <Route path="/app/projects/:projectId/widgets/new" element={<WidgetBuilder />} />
+          <Route element={<PublicOnly />}>
+            <Route path="/landing" element={<LandingPage />} />
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/signup" element={<SignupPage />} />
+            <Route path="/verify-email" element={<VerifyEmailPage />} />
+            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
+          </Route>
 
-        <Route path="/d/:slug" element={<PublicView />} />
+          <Route path="/d/:slug" element={<PublicDashboardPage />} />
+          <Route path="/d/:slug/unlock" element={<PublicDashboardPage />} />
 
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+          <Route element={<RequireAuth />}>
+            <Route element={<AppShell />}>
+              <Route path="/projects" element={<ProjectsPage />} />
+              <Route path="/team" element={<TeamPage />} />
+              <Route path="/billing" element={<BillingPage />} />
+              <Route path="/settings" element={<SettingsPage />} />
+              <Route path="/projects/:projectId/dashboards" element={<DashboardsListPage />} />
+              <Route path="/projects/:projectId/dashboards/:dashboardId" element={<DashboardCanvasPage />} />
+              <Route path="/projects/:projectId/resources" element={<ResourcesPage />} />
+              <Route path="/projects/:projectId/widgets" element={<WidgetsLibraryPage />} />
+              <Route path="/projects/:projectId/widgets/:widgetId" element={<WidgetBuilderPage />} />
+              <Route path="/projects/:projectId/embed" element={<EmbedPage />} />
+            </Route>
+          </Route>
+
+          <Route path="*" element={<Navigate to="/landing" replace />} />
+        </Routes>
+      </AppProvider>
     </BrowserRouter>
   );
 }
+
+export default App;

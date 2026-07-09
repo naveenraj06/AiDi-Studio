@@ -1,79 +1,61 @@
 import * as React from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const Dialog = DialogPrimitive.Root;
 const DialogTrigger = DialogPrimitive.Trigger;
-const DialogPortal = DialogPrimitive.Portal;
-const DialogClose = DialogPrimitive.Close;
 
 const DialogOverlay = React.forwardRef<
-  React.ElementRef<typeof DialogPrimitive.Overlay>,
+  React.ComponentRef<typeof DialogPrimitive.Overlay>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Overlay>
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Overlay
     ref={ref}
-    className={cn("fixed inset-0 z-50 bg-black/60 animate-fade-in", className)}
+    className={cn("fixed inset-0 z-[200] bg-black/60", className)}
     {...props}
   />
 ));
-DialogOverlay.displayName = "DialogOverlay";
+DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 
 const DialogContent = React.forwardRef<
-  React.ElementRef<typeof DialogPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
->(({ className, children, ...props }, ref) => (
-  <DialogPortal>
+  React.ComponentRef<typeof DialogPrimitive.Content>,
+  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & { widthClassName?: string }
+>(({ className, widthClassName = "w-[420px]", children, ...props }, ref) => (
+  <DialogPrimitive.Portal>
     <DialogOverlay />
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        "fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border-strong bg-bg-1 shadow-2xl animate-slide-up",
-        className
+        "fixed left-1/2 top-1/2 z-[200] -translate-x-1/2 -translate-y-1/2 rounded-[14px] border border-border-strong bg-bg-1 p-[26px] shadow-2xl focus:outline-none",
+        widthClassName,
+        className,
       )}
       {...props}
     >
       {children}
-      <DialogPrimitive.Close className="absolute right-4 top-4 text-ink-3 hover:text-ink-1 transition-colors">
-        <X className="h-4 w-4" />
-      </DialogPrimitive.Close>
     </DialogPrimitive.Content>
-  </DialogPortal>
+  </DialogPrimitive.Portal>
 ));
-DialogContent.displayName = "DialogContent";
-
-const DialogHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
-  <div className={cn("flex flex-col gap-1 px-5 py-4 border-b border-border", className)} {...props} />
-);
+DialogContent.displayName = DialogPrimitive.Content.displayName;
 
 const DialogTitle = React.forwardRef<
-  React.ElementRef<typeof DialogPrimitive.Title>,
+  React.ComponentRef<typeof DialogPrimitive.Title>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Title>
 >(({ className, ...props }, ref) => (
-  <DialogPrimitive.Title ref={ref} className={cn("text-base font-semibold text-ink-1", className)} {...props} />
+  <DialogPrimitive.Title
+    ref={ref}
+    className={cn("font-display mb-[18px] text-[17px] font-bold text-ink-1", className)}
+    {...props}
+  />
 ));
-DialogTitle.displayName = "DialogTitle";
+DialogTitle.displayName = DialogPrimitive.Title.displayName;
 
 const DialogDescription = React.forwardRef<
-  React.ElementRef<typeof DialogPrimitive.Description>,
+  React.ComponentRef<typeof DialogPrimitive.Description>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Description>
 >(({ className, ...props }, ref) => (
-  <DialogPrimitive.Description ref={ref} className={cn("text-xs text-ink-3", className)} {...props} />
+  <DialogPrimitive.Description ref={ref} className={cn("mb-4 text-[12px] text-ink-3", className)} {...props} />
 ));
-DialogDescription.displayName = "DialogDescription";
+DialogDescription.displayName = DialogPrimitive.Description.displayName;
 
-const DialogFooter = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
-  <div className={cn("flex items-center justify-between gap-2 px-5 py-4 border-t border-border", className)} {...props} />
-);
-
-export {
-  Dialog,
-  DialogTrigger,
-  DialogContent,
-  DialogHeader,
-  DialogFooter,
-  DialogTitle,
-  DialogDescription,
-  DialogClose,
-};
+export { Dialog, DialogTrigger, DialogContent, DialogTitle, DialogDescription };

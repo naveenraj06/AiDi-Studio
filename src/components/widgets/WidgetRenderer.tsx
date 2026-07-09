@@ -1,108 +1,147 @@
-import {
-  LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
-  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-} from "recharts";
-import { Widget } from "@/data/types";
-import { sampleTimeSeries, sampleBarData, sampleDonutData, sampleTableRows } from "@/data/widgets";
-import { MapPin } from "lucide-react";
+import type { WidgetType } from "@/types";
 
-const CHART_COLORS = ["#7D5AFF", "#33D1EE", "#FEBF33", "#20D491"];
-
-const tooltipStyle = {
-  background: "#1C1C23",
-  border: "1px solid rgba(255,255,255,0.12)",
-  borderRadius: 8,
-  fontSize: 11,
-  color: "#F2F2F4",
-};
-
-export function WidgetRenderer({ widget, compact = false }: { widget: Widget; compact?: boolean }) {
-  switch (widget.type) {
-    case "line":
-      return (
-        <ResponsiveContainer width="100%" height={compact ? 90 : 220}>
-          <LineChart data={sampleTimeSeries} margin={{ top: 6, right: 8, left: -20, bottom: 0 }}>
-            {!compact && <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />}
-            <XAxis dataKey="date" tick={{ fontSize: 10, fill: "#6B6B76" }} axisLine={false} tickLine={false} hide={compact} />
-            <YAxis tick={{ fontSize: 10, fill: "#6B6B76" }} axisLine={false} tickLine={false} hide={compact} />
-            {!compact && <Tooltip contentStyle={tooltipStyle} />}
-            <Line type="monotone" dataKey="revenue" stroke="#7D5AFF" strokeWidth={2} dot={!compact} activeDot={{ r: 4 }} />
-          </LineChart>
-        </ResponsiveContainer>
-      );
-    case "bar":
-      return (
-        <ResponsiveContainer width="100%" height={compact ? 90 : 220}>
-          <BarChart data={sampleBarData} margin={{ top: 6, right: 8, left: -20, bottom: 0 }}>
-            {!compact && <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />}
-            <XAxis dataKey="name" tick={{ fontSize: 10, fill: "#6B6B76" }} axisLine={false} tickLine={false} hide={compact} />
-            <YAxis tick={{ fontSize: 10, fill: "#6B6B76" }} axisLine={false} tickLine={false} hide={compact} />
-            {!compact && <Tooltip contentStyle={tooltipStyle} cursor={{ fill: "rgba(255,255,255,0.04)" }} />}
-            <Bar dataKey="units" fill="#33D1EE" radius={[4, 4, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
-      );
-    case "donut":
-      return (
-        <ResponsiveContainer width="100%" height={compact ? 90 : 220}>
-          <PieChart>
-            <Pie data={sampleDonutData} dataKey="value" nameKey="name" innerRadius={compact ? 24 : 55} outerRadius={compact ? 38 : 85} paddingAngle={2}>
-              {sampleDonutData.map((_, i) => (
-                <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} stroke="none" />
-              ))}
-            </Pie>
-            {!compact && <Tooltip contentStyle={tooltipStyle} />}
-          </PieChart>
-        </ResponsiveContainer>
-      );
-    case "stat": {
-      const value = widget.name.includes("Revenue") ? "$98,346" : widget.name.includes("Active") ? "12,438" : "3.8%";
-      const delta = widget.name.includes("Conversion") ? "-0.4%" : "+12.4%";
-      const isUp = !delta.startsWith("-");
-      return (
-        <div className="flex h-full flex-col justify-center gap-1 px-1">
-          <div className={compact ? "text-lg font-bold text-ink-1" : "text-2xl font-bold text-ink-1"}>{value}</div>
-          <div className={cnDelta(isUp)}>{delta} vs last period</div>
-        </div>
-      );
-    }
-    case "table":
-      return (
-        <div className="overflow-hidden rounded-md">
-          <table className="w-full text-left text-[11px]">
-            <thead>
-              <tr className="border-b border-border text-ink-3">
-                <th className="py-1.5 font-medium">Name</th>
-                <th className="py-1.5 font-medium">Plan</th>
-                <th className="py-1.5 font-medium">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sampleTableRows.slice(0, compact ? 3 : 4).map((row, i) => (
-                <tr key={i} className={i % 2 ? "bg-white/[0.02]" : ""}>
-                  <td className="py-1.5 text-ink-1">{row.name}</td>
-                  <td className="py-1.5 text-ink-2">{row.plan}</td>
-                  <td className="py-1.5">
-                    <span className={row.status === "Active" ? "text-brand-green" : "text-brand-amber"}>{row.status}</span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      );
-    case "map":
-      return (
-        <div className="flex h-full flex-col items-center justify-center gap-2 text-ink-3">
-          <MapPin className="h-6 w-6" />
-          <span className="text-[11px]">Geo distribution map</span>
-        </div>
-      );
-    default:
-      return null;
-  }
+interface WidgetRendererProps {
+  type: WidgetType;
+  color?: string;
+  showLegend?: boolean;
+  showPoints?: boolean;
 }
 
-function cnDelta(isUp: boolean) {
-  return isUp ? "text-[11px] font-medium text-brand-green" : "text-[11px] font-medium text-brand-red";
+const YS = [140, 110, 120, 70, 90, 30];
+const XS = [0, 80, 160, 240, 320, 400];
+const BAR_HEIGHTS = [60, 85, 45, 95, 70, 55];
+const TABLE_ROWS = [
+  { a: "US-West", b: "1,204", c: "$18.2k" },
+  { a: "EU-Central", b: "882", c: "$12.9k" },
+  { a: "APAC", b: "604", c: "$8.1k" },
+  { a: "US-East", b: "441", c: "$6.4k" },
+];
+
+/** Mini chart preview used by the widget builder (step 4) and the widgets library. */
+export function WidgetRenderer({
+  type,
+  color = "#8b5cf6",
+  showLegend = true,
+  showPoints = true,
+}: WidgetRendererProps) {
+  const linePoints = XS.map((x, i) => `${x},${YS[i]}`).join(" ");
+
+  return (
+    <div className="flex h-full w-full flex-col">
+      {type === "line" && (
+        <svg width="100%" height="100%" viewBox="0 0 400 180" preserveAspectRatio="none">
+          <polyline points={linePoints} fill="none" stroke={color} strokeWidth={3} />
+          {showPoints &&
+            XS.map((x, i) => <circle key={x} cx={x} cy={YS[i]} r={4} fill={color} />)}
+        </svg>
+      )}
+
+      {type === "bar" && (
+        <div className="flex flex-1 items-end gap-2.5 px-1 py-2.5">
+          {BAR_HEIGHTS.map((h, i) => (
+            <div
+              key={i}
+              className="flex-1 rounded-t"
+              style={{ height: `${h}%`, background: color }}
+            />
+          ))}
+        </div>
+      )}
+
+      {type === "stat" && (
+        <div className="flex flex-1 flex-col items-center justify-center gap-2">
+          <div className="font-display text-[44px] font-extrabold" style={{ color }}>
+            18.2k
+          </div>
+          <div className="text-[12px] text-brand-green">▲ 8.2% vs last period</div>
+        </div>
+      )}
+
+      {type === "table" && (
+        <div className="flex flex-1 flex-col gap-1.5 p-1">
+          {TABLE_ROWS.map((row) => (
+            <div
+              key={row.a}
+              className="flex gap-2.5 border-b border-border-subtle pb-1.5 text-[11px] text-ink-2"
+            >
+              <div className="flex-1">{row.a}</div>
+              <div className="flex-1">{row.b}</div>
+              <div className="flex-1" style={{ color }}>
+                {row.c}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {type === "donut" && (
+        <div className="flex flex-1 items-center justify-center gap-5">
+          <svg width="120" height="120" viewBox="0 0 42 42">
+            <circle r="15.9" cx="21" cy="21" fill="transparent" stroke="#232330" strokeWidth={7} />
+            <circle
+              r="15.9"
+              cx="21"
+              cy="21"
+              fill="transparent"
+              stroke={color}
+              strokeWidth={7}
+              strokeDasharray="45 100"
+              strokeDashoffset={25}
+            />
+            <circle
+              r="15.9"
+              cx="21"
+              cy="21"
+              fill="transparent"
+              stroke="#22d3ee"
+              strokeWidth={7}
+              strokeDasharray="30 100"
+              strokeDashoffset={-20}
+            />
+            <circle
+              r="15.9"
+              cx="21"
+              cy="21"
+              fill="transparent"
+              stroke="#fbbf24"
+              strokeWidth={7}
+              strokeDasharray="25 100"
+              strokeDashoffset={-50}
+            />
+          </svg>
+          {showLegend && (
+            <div className="flex flex-col gap-1.5 text-[11px] text-ink-2">
+              <div>
+                <span
+                  className="mr-1.5 inline-block h-2 w-2 rounded-sm"
+                  style={{ background: color }}
+                />
+                Segment A
+              </div>
+              <div>
+                <span className="mr-1.5 inline-block h-2 w-2 rounded-sm bg-brand-cyan" />
+                Segment B
+              </div>
+              <div>
+                <span className="mr-1.5 inline-block h-2 w-2 rounded-sm bg-brand-amber" />
+                Segment C
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {type === "map" && (
+        <div
+          className="flex flex-1 items-center justify-center rounded-lg font-mono text-[11px] text-ink-3"
+          style={{
+            background:
+              "repeating-linear-gradient(45deg,#0d0d11,#0d0d11 10px,#131318 10px,#131318 20px)",
+          }}
+        >
+          map data by region
+        </div>
+      )}
+    </div>
+  );
 }
