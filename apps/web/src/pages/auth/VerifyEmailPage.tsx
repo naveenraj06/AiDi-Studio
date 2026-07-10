@@ -1,9 +1,16 @@
+import * as React from "react";
 import { useApp } from "@/context/AppContext";
-import { Button } from "@/components/ui/button";
 import AuthLayout from "./AuthLayout";
 
 export default function VerifyEmailPage() {
-  const { pendingVerificationEmail, verifyEmail, resendVerification } = useApp();
+  const { pendingVerificationEmail, resendVerification } = useApp();
+  const [resending, setResending] = React.useState(false);
+
+  const handleResend = async () => {
+    setResending(true);
+    await resendVerification();
+    setResending(false);
+  };
 
   return (
     <AuthLayout>
@@ -11,14 +18,15 @@ export default function VerifyEmailPage() {
       <div className="font-display mb-2 text-[20px] font-bold">Verify your email</div>
       <div className="mb-5 text-[13px] leading-[1.6] text-ink-2">
         We sent a verification link to{" "}
-        <strong className="text-ink-1">{pendingVerificationEmail || "your email"}</strong>. The link expires in 24
-        hours. This is a prototype — click below to simulate clicking the email link.
+        <strong className="text-ink-1">{pendingVerificationEmail || "your email"}</strong>. Click the link to
+        finish creating your account — this page will move you along automatically once you do.
       </div>
-      <Button onClick={verifyEmail} className="w-full">
-        Simulate: click verification link
-      </Button>
-      <div onClick={resendVerification} className="mt-4 cursor-pointer text-center text-[12px] text-brand-violet-light">
-        Resend verification email
+      <div
+        onClick={resending ? undefined : handleResend}
+        className="cursor-pointer text-center text-[12px] text-brand-violet-light"
+        style={resending ? { opacity: 0.6, pointerEvents: "none" } : undefined}
+      >
+        {resending ? "Resending…" : "Resend verification email"}
       </div>
     </AuthLayout>
   );

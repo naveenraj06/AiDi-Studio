@@ -2,6 +2,10 @@ import * as React from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import type { ApiResource, WidgetFineTune, WidgetSuggestion, WidgetType } from "@/types";
 import { useApp } from "@/context/AppContext";
+import { useProject } from "@/hooks/useProjects";
+import { useResources } from "@/hooks/useResources";
+import { useCreateWidget, useUpdateWidget, useWidgets } from "@/hooks/useWidgets";
+import { ApiError } from "@/lib/api";
 import { suggestFor } from "@/components/widget-builder/suggestFor";
 import { StepProgress } from "@/components/widget-builder/StepProgress";
 import { Step1Resource } from "@/components/widget-builder/Step1Resource";
@@ -20,10 +24,17 @@ const DEFAULT_FT: WidgetFineTune = {
 export default function WidgetBuilderPage() {
   const { projectId, widgetId } = useParams<{ projectId: string; widgetId: string }>();
   const navigate = useNavigate();
-  const { projects, resourcesByProject, actions, toast } = useApp();
+  const { toast } = useApp();
+  const isEditing = widgetId !== "new";
 
-  const project = projects.find((p) => p.id === projectId);
-  const resources = (projectId && resourcesByProject[projectId]) || [];
+  const { data: project, isLoading: projectLoading } = useProject(projectId);
+  const { data: resources, isLoading: resourcesLoading } = useResources(projectId);
+  const { data: widgets, isLoading: widgetsLoading } = useWidgets(projectId);
+  const createWidget = useCreateWidget(projectId ?? "");
+  const updateWidget = useUpdateWidget(projectId ?? "");
+
+  const existingWidget = isEditing ? widgets?.find((w) => w.id === widgetId) : undefined;
+  const widgetNotFound = isEditing && !widgetsLoading && !!widgets && !existingWidget;
 
   const [step, setStep] = React.useState(1);
   const [selectedResourceId, setSelectedResourceId] = React.useState<string | null>(null);
@@ -32,10 +43,36 @@ export default function WidgetBuilderPage() {
   const [chosenTypeOverride, setChosenTypeOverride] = React.useState<WidgetType | null>(null);
   const [ft, setFt] = React.useState<WidgetFineTune>(DEFAULT_FT);
   const [saveAsTemplate, setSaveAsTemplate] = React.useState(false);
+  const [saving, setSaving] = React.useState(false);
+  const [prefilled, setPrefilled] = React.useState(false);
 
-  if (!project || !projectId) return null;
+  React.useEffect(() => {
+    if (isEditing && existingWidget && !prefilled) {
+      setSelectedResourceId(existingWidget.resource_id);
+      setChosenTypeOverride(existingWidget.type);
+      setFt({
+        ...DEFAULT_FT,
+        ...(existingWidget.fine_tune ?? {}),
+        title: existingWidget.fine_tune?.title || existingWidget.name,
+      });
+      setSaveAsTemplate(existingWidget.is_template);
+      setStep(3);
+      setPrefilled(true);
+    }
+  }, [isEditing, existingWidget, prefilled]);
 
-  const backToLibrary = () => navigate(`/projects/${project.id}/widgets`);
+  if (!projectId) return null;
+
+  const backToLibrary = () => navigate(`/projects/${projectId}/widgets`);
+
+  const runAnalysis = (resourceId: string) => {
+    setAnalyzing(true);
+    const resource = resources?.find((r) => r.id === resourceId);
+    setTimeout(() => {
+      if (resource) setSuggestion(suggestFor(resource));
+      setAnalyzing(false);
+    }, 900);
+  };
 
   const selectResource = (r: ApiResource) => {
     setSelectedResourceId(r.id);
@@ -48,43 +85,83 @@ export default function WidgetBuilderPage() {
       return;
     }
     setStep(2);
-    setAnalyzing(true);
-    const resource = resources.find((r) => r.id === selectedResourceId);
-    setTimeout(() => {
-      if (resource) setSuggestion(suggestFor(resource));
-      setAnalyzing(false);
-      setChosenTypeOverride(null);
-    }, 900);
+    setChosenTypeOverride(null);
+    runAnalysis(selectedResourceId);
+  };
+
+  const backToStep2 = () => {
+    if (!suggestion && selectedResourceId) runAnalysis(selectedResourceId);
+    setStep(2);
   };
 
   const chosenType = chosenTypeOverride ?? suggestion?.suggestedType ?? "table";
 
-  const saveWidget = () => {
-    const resource = resources.find((r) => r.id === selectedResourceId);
-    const id = "w" + Math.random().toString(36).slice(2, 8);
-    actions.setWidgets(projectId, (list) => [
-      ...list,
-      {
-        id,
-        name: ft.title,
-        type: chosenType,
-        is_template: saveAsTemplate,
-        resource: resource?.name ?? "",
-        updated_at: new Date().toISOString(),
-      },
-    ]);
-    toast("Widget saved", "success");
-    navigate(`/projects/${project.id}/widgets`);
+  const saveWidget = async () => {
+    setSaving(true);
+    try {
+      if (isEditing && widgetId) {
+        await updateWidget.mutateAsync({
+          id: widgetId,
+          input: {
+            name: ft.title,
+            type: chosenType,
+            isTemplate: saveAsTemplate,
+            resourceId: selectedResourceId,
+            fineTune: ft,
+          },
+        });
+        toast("Widget updated", "success");
+      } else {
+        await createWidget.mutateAsync({
+          name: ft.title,
+          type: chosenType,
+          isTemplate: saveAsTemplate,
+          resourceId: selectedResourceId,
+          fineTune: ft,
+        });
+        toast("Widget saved", "success");
+      }
+      navigate(`/projects/${projectId}/widgets`);
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : "Couldn't save the widget — try again", "error");
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const headerTitle = widgetId === "new" ? "New widget" : "Edit widget";
+  const headerTitle = isEditing ? "Edit widget" : "New widget";
+
+  if (projectLoading || resourcesLoading || (isEditing && !widgetNotFound && !prefilled)) {
+    return (
+      <div className="max-w-[880px] px-11 pb-[60px] pt-8">
+        <div className="h-6 w-40 animate-pulse rounded bg-bg-2" />
+      </div>
+    );
+  }
+
+  if (!project) {
+    return (
+      <div className="max-w-[880px] px-11 pb-[60px] pt-8">
+        <div className="rounded-xl border border-border-default bg-bg-1 p-8 text-center text-[13px] text-ink-3">
+          Project not found, or you don't have access to it.
+        </div>
+      </div>
+    );
+  }
+
+  if (widgetNotFound) {
+    return (
+      <div className="max-w-[880px] px-11 pb-[60px] pt-8">
+        <div className="rounded-xl border border-border-default bg-bg-1 p-8 text-center text-[13px] text-ink-3">
+          Widget not found — it may have been deleted.
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-[880px] px-11 pb-[60px] pt-8">
-      <div
-        onClick={backToLibrary}
-        className="mb-1 flex cursor-pointer items-center gap-2.5 text-[12px] text-ink-3"
-      >
+      <div onClick={backToLibrary} className="mb-1 flex cursor-pointer items-center gap-2.5 text-[12px] text-ink-3">
         ← Widgets library
       </div>
       <div className="font-display mb-6 mt-2 text-[24px] font-bold text-ink-1">{headerTitle}</div>
@@ -93,7 +170,7 @@ export default function WidgetBuilderPage() {
 
       {step === 1 && (
         <Step1Resource
-          resources={resources}
+          resources={resources ?? []}
           selectedResourceId={selectedResourceId}
           onSelect={selectResource}
           onNext={toStep2}
@@ -119,7 +196,7 @@ export default function WidgetBuilderPage() {
           onToggleLegend={() => setFt((prev) => ({ ...prev, showLegend: !prev.showLegend }))}
           onTogglePoints={() => setFt((prev) => ({ ...prev, showPoints: !prev.showPoints }))}
           onRefreshChange={(refreshInterval) => setFt((prev) => ({ ...prev, refreshInterval }))}
-          onBack={() => setStep(2)}
+          onBack={backToStep2}
           onNext={() => setStep(4)}
         />
       )}
@@ -129,6 +206,7 @@ export default function WidgetBuilderPage() {
           ft={ft}
           chosenType={chosenType}
           saveAsTemplate={saveAsTemplate}
+          saving={saving}
           onToggleTemplate={() => setSaveAsTemplate((v) => !v)}
           onBack={() => setStep(3)}
           onSave={saveWidget}

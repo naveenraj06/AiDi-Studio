@@ -1,38 +1,22 @@
 import * as React from "react";
 import { useNavigate } from "react-router-dom";
-import {
-  users,
-  initialProjects,
-  initialResourcesByProject,
-  initialWidgetsByProject,
-  initialDashboardsByProject,
-  initialTeamByProject,
-  initialBillingByProject,
-} from "@/data/mockData";
-import type {
-  ApiResource,
-  Billing,
-  Dashboard,
-  Project,
-  Session,
-  TeamMember,
-  ToastKind,
-  Widget,
-} from "@/types";
-
-const SESSION_KEY = "aidi_session";
-
-function loadSession(): Session | null {
-  try {
-    const raw = localStorage.getItem(SESSION_KEY);
-    return raw ? (JSON.parse(raw) as Session) : null;
-  } catch {
-    return null;
-  }
-}
+import type { User as SupabaseUser } from "@supabase/supabase-js";
+import { supabase } from "@/lib/supabaseClient";
+import type { Session, ToastKind, User } from "@/types";
 
 function isValidEmail(email: string) {
   return /^\S+@\S+\.\S+$/.test(email);
+}
+
+function mapSupabaseUser(user: SupabaseUser): User {
+  const meta = user.user_metadata as { name?: string; full_name?: string } | undefined;
+  const name = meta?.name ?? meta?.full_name ?? user.email?.split("@")[0] ?? "User";
+  return {
+    id: user.id,
+    email: user.email ?? "",
+    display_name: name,
+    email_verified: user.email_confirmed_at != null,
+  };
 }
 
 interface ToastState {
@@ -41,38 +25,22 @@ interface ToastState {
 }
 
 type FieldErrors = Record<string, string>;
-
-interface AppActions {
-  setProjects: (fn: (list: Project[]) => Project[]) => void;
-  setResources: (pid: string, fn: (list: ApiResource[]) => ApiResource[]) => void;
-  setWidgets: (pid: string, fn: (list: Widget[]) => Widget[]) => void;
-  setDashboards: (pid: string, fn: (list: Dashboard[]) => Dashboard[]) => void;
-  setTeam: (pid: string, fn: (list: TeamMember[]) => TeamMember[]) => void;
-  setBilling: (pid: string, fn: (b: Billing) => Billing) => void;
-}
+type AuthResult = { ok: boolean; errors?: FieldErrors };
+type OAuthProvider = "google" | "github";
 
 interface AppContextValue {
   session: Session | null;
+  sessionLoading: boolean;
+  isPasswordRecovery: boolean;
   pendingVerificationEmail: string;
-  login: (email: string, password: string) => { ok: boolean; errors?: FieldErrors };
-  signup: (data: { name: string; email: string; password: string; confirmPassword: string }) => {
-    ok: boolean;
-    errors?: FieldErrors;
-  };
-  verifyEmail: () => void;
-  resendVerification: () => void;
-  sendResetLink: (email: string) => { ok: boolean; errors?: FieldErrors };
-  resetPassword: (password: string, confirmPassword: string) => { ok: boolean; errors?: FieldErrors };
-  logoutAllDevices: () => void;
-  logout: () => void;
-
-  projects: Project[];
-  resourcesByProject: Record<string, ApiResource[]>;
-  widgetsByProject: Record<string, Widget[]>;
-  dashboardsByProject: Record<string, Dashboard[]>;
-  teamByProject: Record<string, TeamMember[]>;
-  billingByProject: Record<string, Billing>;
-  actions: AppActions;
+  login: (email: string, password: string) => Promise<AuthResult>;
+  loginWithOAuth: (provider: OAuthProvider) => Promise<void>;
+  signup: (data: { name: string; email: string; password: string; confirmPassword: string }) => Promise<AuthResult>;
+  resendVerification: () => Promise<void>;
+  sendResetLink: (email: string) => Promise<AuthResult>;
+  resetPassword: (password: string, confirmPassword: string) => Promise<AuthResult>;
+  logoutAllDevices: () => Promise<void>;
+  logout: () => Promise<void>;
 
   toast: (msg: string, kind?: ToastKind) => void;
 }
@@ -89,15 +57,10 @@ const TOAST_COLOR: Record<ToastKind, string> = {
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
 
-  const [session, setSession] = React.useState<Session | null>(loadSession);
+  const [session, setSession] = React.useState<Session | null>(null);
+  const [sessionLoading, setSessionLoading] = React.useState(true);
   const [pendingVerificationEmail, setPendingVerificationEmail] = React.useState("");
-
-  const [projects, setProjectsState] = React.useState<Project[]>(initialProjects);
-  const [resourcesByProject, setResourcesByProject] = React.useState(initialResourcesByProject);
-  const [widgetsByProject, setWidgetsByProject] = React.useState(initialWidgetsByProject);
-  const [dashboardsByProject, setDashboardsByProject] = React.useState(initialDashboardsByProject);
-  const [teamByProject, setTeamByProject] = React.useState(initialTeamByProject);
-  const [billingByProject, setBillingByProject] = React.useState(initialBillingByProject);
+  const [isPasswordRecovery, setIsPasswordRecovery] = React.useState(false);
 
   const [toastState, setToastState] = React.useState<ToastState | null>(null);
   const timerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -108,38 +71,80 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     timerRef.current = setTimeout(() => setToastState(null), 2600);
   }, []);
 
-  const persistSession = React.useCallback((next: Session | null) => {
-    try {
-      if (next) localStorage.setItem(SESSION_KEY, JSON.stringify(next));
-      else localStorage.removeItem(SESSION_KEY);
-    } catch {
-      /* localStorage unavailable — session just won't survive a refresh */
-    }
-    setSession(next);
+  React.useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session?.user ? { user: mapSupabaseUser(data.session.user) } : null);
+      setSessionLoading(false);
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange((event, newSession) => {
+      // A password-recovery link creates a real session, but the user must
+      // land on /reset-password to set a new password, not get redirected
+      // straight to the app by PublicOnly as if they'd logged in normally.
+      if (event === "PASSWORD_RECOVERY") setIsPasswordRecovery(true);
+      else if (event === "SIGNED_OUT") setIsPasswordRecovery(false);
+
+      setSession(newSession?.user ? { user: mapSupabaseUser(newSession.user) } : null);
+      setSessionLoading(false);
+    });
+
+    return () => listener.subscription.unsubscribe();
   }, []);
 
   const login = React.useCallback(
-    (email: string, password: string) => {
+    async (email: string, password: string): Promise<AuthResult> => {
       const errors: FieldErrors = {};
       if (!email || !isValidEmail(email)) errors.email = "Enter a valid email address";
-      if (!password || password.length < 6) errors.password = "Password must be at least 6 characters";
+      if (!password) errors.password = "Enter your password";
       if (Object.keys(errors).length) return { ok: false, errors };
-      persistSession({ user: users.u1, mfaVerified: true });
+
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) {
+        const message = error.message.toLowerCase().includes("confirm")
+          ? "Verify your email before signing in"
+          : "Invalid email or password";
+        return { ok: false, errors: { password: message } };
+      }
       toast("Welcome back!", "success");
       navigate("/projects");
       return { ok: true };
     },
-    [navigate, persistSession, toast],
+    [navigate, toast],
+  );
+
+  const loginWithOAuth = React.useCallback(
+    async (provider: OAuthProvider) => {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: { redirectTo: `${window.location.origin}/projects` },
+      });
+      if (error) toast(error.message, "error");
+    },
+    [toast],
   );
 
   const signup = React.useCallback(
-    (data: { name: string; email: string; password: string; confirmPassword: string }) => {
+    async (data: { name: string; email: string; password: string; confirmPassword: string }): Promise<AuthResult> => {
       const errors: FieldErrors = {};
       if (!data.name) errors.name = "Enter your name";
       if (!data.email || !isValidEmail(data.email)) errors.email = "Enter a valid email address";
       if (!data.password || data.password.length < 8) errors.password = "Password must be at least 8 characters";
       if (data.password !== data.confirmPassword) errors.confirmPassword = "Passwords don't match";
       if (Object.keys(errors).length) return { ok: false, errors };
+
+      const { data: signUpData, error } = await supabase.auth.signUp({
+        email: data.email,
+        password: data.password,
+        options: { data: { name: data.name } },
+      });
+      if (error) return { ok: false, errors: { email: error.message } };
+
+      if (signUpData.session) {
+        toast("Welcome to AiDi Studio!", "success");
+        navigate("/projects");
+        return { ok: true };
+      }
+
       setPendingVerificationEmail(data.email);
       toast("Account created — check your email", "success");
       navigate("/verify-email");
@@ -148,108 +153,84 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [navigate, toast],
   );
 
-  const verifyEmail = React.useCallback(() => {
-    toast("Email verified", "success");
-    persistSession({
-      user: { ...users.u1, email: pendingVerificationEmail || users.u1.email, email_verified: true },
-      mfaVerified: true,
-    });
-    navigate("/projects");
-  }, [navigate, persistSession, pendingVerificationEmail, toast]);
-
-  const resendVerification = React.useCallback(() => {
-    toast("Verification email resent", "info");
-  }, [toast]);
+  const resendVerification = React.useCallback(async () => {
+    if (!pendingVerificationEmail) return;
+    const { error } = await supabase.auth.resend({ type: "signup", email: pendingVerificationEmail });
+    if (error) toast(error.message, "error");
+    else toast("Verification email resent", "info");
+  }, [pendingVerificationEmail, toast]);
 
   const sendResetLink = React.useCallback(
-    (email: string) => {
+    async (email: string): Promise<AuthResult> => {
       if (!email || !isValidEmail(email)) return { ok: false, errors: { email: "Enter a valid email address" } };
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      if (error) return { ok: false, errors: { email: error.message } };
       toast("Reset link sent — check your email", "success");
-      navigate("/reset-password");
-      return { ok: true };
-    },
-    [navigate, toast],
-  );
-
-  const resetPassword = React.useCallback(
-    (password: string, confirmPassword: string) => {
-      const errors: FieldErrors = {};
-      if (!password || password.length < 8) errors.password = "Password must be at least 8 characters";
-      if (password !== confirmPassword) errors.confirmPassword = "Passwords don't match";
-      if (Object.keys(errors).length) return { ok: false, errors };
-      toast("Password updated — sign in", "success");
       navigate("/login");
       return { ok: true };
     },
     [navigate, toast],
   );
 
-  const logoutAllDevices = React.useCallback(() => {
-    toast("Logged out of all other devices", "success");
+  const resetPassword = React.useCallback(
+    async (password: string, confirmPassword: string): Promise<AuthResult> => {
+      const errors: FieldErrors = {};
+      if (!password || password.length < 8) errors.password = "Password must be at least 8 characters";
+      if (password !== confirmPassword) errors.confirmPassword = "Passwords don't match";
+      if (Object.keys(errors).length) return { ok: false, errors };
+
+      const { error } = await supabase.auth.updateUser({ password });
+      if (error) return { ok: false, errors: { password: error.message } };
+      setIsPasswordRecovery(false);
+      toast("Password updated", "success");
+      navigate("/projects");
+      return { ok: true };
+    },
+    [navigate, toast],
+  );
+
+  const logoutAllDevices = React.useCallback(async () => {
+    const { error } = await supabase.auth.signOut({ scope: "others" });
+    if (error) toast(error.message, "error");
+    else toast("Logged out of all other devices", "success");
   }, [toast]);
 
-  const logout = React.useCallback(() => {
-    persistSession(null);
+  const logout = React.useCallback(async () => {
+    await supabase.auth.signOut();
     navigate("/landing");
-  }, [navigate, persistSession]);
-
-  const actions = React.useMemo<AppActions>(
-    () => ({
-      setProjects: (fn) => setProjectsState((prev) => fn(prev)),
-      setResources: (pid, fn) =>
-        setResourcesByProject((prev) => ({ ...prev, [pid]: fn(prev[pid] || []) })),
-      setWidgets: (pid, fn) => setWidgetsByProject((prev) => ({ ...prev, [pid]: fn(prev[pid] || []) })),
-      setDashboards: (pid, fn) =>
-        setDashboardsByProject((prev) => ({ ...prev, [pid]: fn(prev[pid] || []) })),
-      setTeam: (pid, fn) => setTeamByProject((prev) => ({ ...prev, [pid]: fn(prev[pid] || []) })),
-      setBilling: (pid, fn) =>
-        setBillingByProject((prev) => ({
-          ...prev,
-          [pid]: fn(prev[pid] || { plan: "free", status: "active", seats: 1, pricePerSeat: 0, current_period_end: null, card: null, invoices: [] }),
-        })),
-    }),
-    [],
-  );
+  }, [navigate]);
 
   const value = React.useMemo<AppContextValue>(
     () => ({
       session,
+      sessionLoading,
+      isPasswordRecovery,
       pendingVerificationEmail,
       login,
+      loginWithOAuth,
       signup,
-      verifyEmail,
       resendVerification,
       sendResetLink,
       resetPassword,
       logoutAllDevices,
       logout,
-      projects,
-      resourcesByProject,
-      widgetsByProject,
-      dashboardsByProject,
-      teamByProject,
-      billingByProject,
-      actions,
       toast,
     }),
     [
       session,
+      sessionLoading,
+      isPasswordRecovery,
       pendingVerificationEmail,
       login,
+      loginWithOAuth,
       signup,
-      verifyEmail,
       resendVerification,
       sendResetLink,
       resetPassword,
       logoutAllDevices,
       logout,
-      projects,
-      resourcesByProject,
-      widgetsByProject,
-      dashboardsByProject,
-      teamByProject,
-      billingByProject,
-      actions,
       toast,
     ],
   );

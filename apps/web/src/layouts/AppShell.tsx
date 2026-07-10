@@ -1,5 +1,6 @@
 import { Outlet, useNavigate, useParams } from "react-router-dom";
 import { useApp } from "@/context/AppContext";
+import { useProjects } from "@/hooks/useProjects";
 
 interface NavItem {
   key: string;
@@ -10,10 +11,11 @@ interface NavItem {
 
 export default function AppShell() {
   const { projectId } = useParams<{ projectId?: string }>();
-  const { session, projects, logout } = useApp();
+  const { session, logout } = useApp();
+  const { data: projects } = useProjects();
   const navigate = useNavigate();
 
-  const currentProject = projectId ? projects.find((p) => p.id === projectId) : null;
+  const currentProject = projectId ? projects?.find((p) => p.id === projectId) : null;
 
   const navDefs: NavItem[] = currentProject
     ? [

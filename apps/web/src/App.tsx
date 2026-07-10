@@ -41,6 +41,7 @@ function App() {
 
           <Route path="/d/:slug" element={<PublicDashboardPage />} />
           <Route path="/d/:slug/unlock" element={<PublicDashboardPage />} />
+          <Route path="/d/:slug/embed" element={<PublicDashboardPage />} />
 
           <Route element={<RequireAuth />}>
             <Route element={<AppShell />}>

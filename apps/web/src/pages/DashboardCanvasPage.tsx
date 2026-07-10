@@ -1,6 +1,10 @@
 import * as React from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useApp } from "@/context/AppContext";
+import { useProject } from "@/hooks/useProjects";
+import { useDashboard, useReplaceDashboardTiles, useUpdateDashboard } from "@/hooks/useDashboards";
+import { useWidgets } from "@/hooks/useWidgets";
+import { ApiError } from "@/lib/api";
 import type { DashboardTile, Widget } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -11,94 +15,111 @@ import { PublishDialog } from "@/components/dashboard-canvas/PublishDialog";
 
 export default function DashboardCanvasPage() {
   const { projectId, dashboardId } = useParams<{ projectId: string; dashboardId: string }>();
-  const { projects, dashboardsByProject, widgetsByProject, actions, toast } = useApp();
+  const { toast } = useApp();
   const navigate = useNavigate();
 
-  const project = projects.find((p) => p.id === projectId);
-  const dashboards = (projectId && dashboardsByProject[projectId]) || [];
-  const dashboard = dashboards.find((d) => d.id === dashboardId);
-  const allWidgets = (projectId && widgetsByProject[projectId]) || [];
+  const { data: project, isLoading: projectLoading } = useProject(projectId);
+  const { data: dashboard, isLoading: dashboardLoading, isError } = useDashboard(projectId, dashboardId);
+  const { data: allWidgets } = useWidgets(projectId);
+  const replaceTiles = useReplaceDashboardTiles(projectId ?? "", dashboardId ?? "");
+  const updateDashboard = useUpdateDashboard(projectId ?? "", dashboardId ?? "");
 
   const [layout, setLayout] = React.useState<DashboardTile[]>([]);
-  const [saving, setSaving] = React.useState(false);
-  const [lastSaved, setLastSaved] = React.useState(Date.now());
   const [dragIndex, setDragIndex] = React.useState<number | null>(null);
   const [showAdd, setShowAdd] = React.useState(false);
   const [showPublish, setShowPublish] = React.useState(false);
   const [viewerFilters, setViewerFilters] = React.useState(true);
   const [branding, setBranding] = React.useState(true);
+  const [lastSavedAt, setLastSavedAt] = React.useState<number | null>(null);
   const [, setTick] = React.useState(0);
 
   React.useEffect(() => {
-    setLayout((dashboard?.widgetIds || []).map((id) => ({ id, colSpan: 2, rowSpan: 1 })));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dashboardId]);
+    if (dashboard) setLayout(dashboard.layout);
+  }, [dashboard]);
 
   React.useEffect(() => {
     const id = setInterval(() => setTick((t) => t + 1), 1000);
     return () => clearInterval(id);
   }, []);
 
-  const markDirty = () => {
-    setSaving(true);
-    setTimeout(() => {
-      setSaving(false);
-      setLastSaved(Date.now());
-    }, 700);
-  };
+  const persistLayout = React.useCallback(
+    async (next: DashboardTile[]) => {
+      try {
+        await replaceTiles.mutateAsync(next.map((t) => ({ widgetId: t.id, colSpan: t.colSpan, rowSpan: t.rowSpan })));
+        setLastSavedAt(Date.now());
+      } catch {
+        toast("Couldn't save the layout — try again", "error");
+      }
+    },
+    [replaceTiles, toast],
+  );
 
-  if (!project || !dashboard || !projectId || !dashboardId) return null;
+  if (!projectId || !dashboardId) return null;
 
-  const widgetMap = new Map(allWidgets.map((w) => [w.id, w]));
+  if (projectLoading || dashboardLoading) {
+    return (
+      <div className="px-11 py-9">
+        <div className="h-6 w-40 animate-pulse rounded bg-bg-2" />
+      </div>
+    );
+  }
+
+  if (isError || !project || !dashboard) {
+    return (
+      <div className="px-11 py-9">
+        <div className="rounded-xl border border-border-default bg-bg-1 p-8 text-center text-[13px] text-ink-3">
+          Dashboard not found, or you don't have access to it.
+        </div>
+      </div>
+    );
+  }
+
+  const widgetMap = new Map((allWidgets ?? []).map((w) => [w.id, w]));
 
   const handleDrop = (i: number) => {
     if (dragIndex === null || dragIndex === i) return;
-    setLayout((prev) => {
-      const next = [...prev];
-      const [moved] = next.splice(dragIndex, 1);
-      next.splice(i, 0, moved);
-      return next;
-    });
+    const next = [...layout];
+    const [moved] = next.splice(dragIndex, 1);
+    next.splice(i, 0, moved);
+    setLayout(next);
     setDragIndex(null);
-    markDirty();
+    void persistLayout(next);
   };
 
   const cycleSpan = (i: number) => {
-    setLayout((prev) => {
-      const next = [...prev];
-      const cur = next[i].colSpan;
-      next[i] = { ...next[i], colSpan: cur === 1 ? 2 : cur === 2 ? 4 : 1 };
-      return next;
-    });
-    markDirty();
+    const next = [...layout];
+    const cur = next[i].colSpan;
+    next[i] = { ...next[i], colSpan: cur === 1 ? 2 : cur === 2 ? 4 : 1 };
+    setLayout(next);
+    void persistLayout(next);
   };
 
   const cycleRow = (i: number) => {
-    setLayout((prev) => {
-      const next = [...prev];
-      next[i] = { ...next[i], rowSpan: next[i].rowSpan === 1 ? 2 : 1 };
-      return next;
-    });
-    markDirty();
+    const next = [...layout];
+    next[i] = { ...next[i], rowSpan: next[i].rowSpan === 1 ? 2 : 1 };
+    setLayout(next);
+    void persistLayout(next);
   };
 
   const removeTile = (i: number) => {
-    setLayout((prev) => prev.filter((_, idx) => idx !== i));
-    markDirty();
+    const next = layout.filter((_, idx) => idx !== i);
+    setLayout(next);
+    void persistLayout(next);
     toast("Widget removed from dashboard", "info");
   };
 
   const addWidget = (w: Widget) => {
-    setLayout((prev) => [...prev, { id: w.id, colSpan: 2, rowSpan: 1 }]);
+    const next = [...layout, { id: w.id, colSpan: 2, rowSpan: 1 }];
+    setLayout(next);
+    void persistLayout(next);
     setShowAdd(false);
-    markDirty();
     toast("Widget added", "success");
   };
 
   const applyFilter = () => toast("Filters applied to all widgets", "info");
 
   const isPublished = dashboard.status === "published";
-  const publicUrl = `https://aidistudio.app/d/${dashboard.slug}`;
+  const publicUrl = `${window.location.origin}/d/${dashboard.slug}`;
   const embedSnippet = `<iframe src="${publicUrl}/embed" width="100%" height="600" frameborder="0"></iframe>`;
 
   const copyUrl = () => {
@@ -106,20 +127,43 @@ export default function DashboardCanvasPage() {
     toast("URL copied to clipboard", "success");
   };
 
-  const togglePublishState = () => {
+  const togglePublishState = async () => {
     const nowPublished = dashboard.status !== "published";
-    actions.setDashboards(projectId, (list) =>
-      list.map((d) => (d.id === dashboardId ? { ...d, status: nowPublished ? "published" : "draft" } : d)),
-    );
-    toast(nowPublished ? "Dashboard published" : "Dashboard unpublished", "success");
-    setShowPublish(false);
+    try {
+      await updateDashboard.mutateAsync({ status: nowPublished ? "published" : "draft" });
+      toast(nowPublished ? "Dashboard published" : "Dashboard unpublished", "success");
+      setShowPublish(false);
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : "Couldn't update the dashboard", "error");
+    }
   };
 
-  const secondsAgo = Math.max(0, Math.round((Date.now() - lastSaved) / 1000));
-  const saveLabel = saving ? "Saving…" : `Saved ${secondsAgo}s ago`;
+  const setSharePassword = async (password: string) => {
+    try {
+      await updateDashboard.mutateAsync({ sharePassword: password });
+      toast("Password set", "success");
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : "Couldn't set the password", "error");
+    }
+  };
+
+  const removeSharePassword = async () => {
+    try {
+      await updateDashboard.mutateAsync({ sharePassword: null });
+      toast("Password removed", "success");
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : "Couldn't remove the password", "error");
+    }
+  };
+
+  const saveLabel = replaceTiles.isPending
+    ? "Saving…"
+    : lastSavedAt
+      ? `Saved ${Math.max(0, Math.round((Date.now() - lastSavedAt) / 1000))}s ago`
+      : "";
 
   const usedIds = new Set(layout.map((l) => l.id));
-  const availableWidgets = allWidgets.filter((w) => !usedIds.has(w.id));
+  const availableWidgets = (allWidgets ?? []).filter((w) => !usedIds.has(w.id));
 
   return (
     <div className="flex h-full flex-col">
@@ -225,11 +269,16 @@ export default function DashboardCanvasPage() {
         embedSnippet={embedSnippet}
         viewerFilters={viewerFilters}
         branding={branding}
+        hasSharePassword={dashboard.has_share_password}
+        updatingPassword={updateDashboard.isPending}
+        publishing={updateDashboard.isPending}
         onToggleViewerFilters={() => setViewerFilters((v) => !v)}
         onToggleBranding={() => setBranding((v) => !v)}
         onCopyUrl={copyUrl}
         onKeepDraft={() => setShowPublish(false)}
         onTogglePublishState={togglePublishState}
+        onSetSharePassword={setSharePassword}
+        onRemoveSharePassword={removeSharePassword}
       />
     </div>
   );

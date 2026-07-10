@@ -13,9 +13,13 @@ export default function SignupPage() {
   const [password, setPassword] = React.useState("");
   const [confirmPassword, setConfirmPassword] = React.useState("");
   const [errors, setErrors] = React.useState<Record<string, string>>({});
+  const [pending, setPending] = React.useState(false);
 
-  const handleSignup = () => {
-    const result = signup({ name, email, password, confirmPassword });
+  const handleSignup = async () => {
+    setPending(true);
+    setErrors({});
+    const result = await signup({ name, email, password, confirmPassword });
+    setPending(false);
     if (!result.ok && result.errors) setErrors(result.errors);
   };
 
@@ -43,8 +47,8 @@ export default function SignupPage() {
         error={errors.confirmPassword}
       />
 
-      <Button onClick={handleSignup} className="mt-2 w-full">
-        Create account
+      <Button onClick={handleSignup} disabled={pending} className="mt-2 w-full">
+        {pending ? "Creating account…" : "Create account"}
       </Button>
       <div className="mt-[18px] text-center text-[12px] text-ink-3">
         Already have an account? <Link to="/login">Log in</Link>

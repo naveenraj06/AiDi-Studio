@@ -1,24 +1,43 @@
 import * as React from "react";
+import { Link } from "react-router-dom";
 import { useApp } from "@/context/AppContext";
 import { Button } from "@/components/ui/button";
 import AuthLayout from "./AuthLayout";
 import { FormField } from "./FormField";
 
 export default function ResetPasswordPage() {
-  const { resetPassword } = useApp();
+  const { resetPassword, isPasswordRecovery } = useApp();
   const [password, setPassword] = React.useState("");
   const [confirmPassword, setConfirmPassword] = React.useState("");
   const [errors, setErrors] = React.useState<Record<string, string>>({});
+  const [pending, setPending] = React.useState(false);
 
-  const handleReset = () => {
-    const result = resetPassword(password, confirmPassword);
+  const handleReset = async () => {
+    setPending(true);
+    setErrors({});
+    const result = await resetPassword(password, confirmPassword);
+    setPending(false);
     if (!result.ok && result.errors) setErrors(result.errors);
   };
+
+  if (!isPasswordRecovery) {
+    return (
+      <AuthLayout>
+        <div className="font-display mb-2 text-[20px] font-bold">Link expired</div>
+        <div className="mb-5 text-[13px] leading-[1.6] text-ink-2">
+          This password reset link is invalid or has expired. Request a new one to continue.
+        </div>
+        <Link to="/forgot-password">
+          <Button className="w-full">Request a new link</Button>
+        </Link>
+      </AuthLayout>
+    );
+  }
 
   return (
     <AuthLayout>
       <div className="font-display mb-1 text-[20px] font-bold">Set a new password</div>
-      <div className="mb-[22px] text-[13px] text-ink-3">This reset link is valid for 1 hour and single-use.</div>
+      <div className="mb-[22px] text-[13px] text-ink-3">This reset link is single-use.</div>
 
       <FormField
         label="New password"
@@ -37,8 +56,8 @@ export default function ResetPasswordPage() {
         error={errors.confirmPassword}
       />
 
-      <Button onClick={handleReset} className="mt-2 w-full">
-        Update password
+      <Button onClick={handleReset} disabled={pending} className="mt-2 w-full">
+        {pending ? "Updating…" : "Update password"}
       </Button>
     </AuthLayout>
   );

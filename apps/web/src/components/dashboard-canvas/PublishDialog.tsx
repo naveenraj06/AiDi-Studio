@@ -1,6 +1,8 @@
+import * as React from "react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 interface PublishDialogProps {
   open: boolean;
@@ -10,11 +12,16 @@ interface PublishDialogProps {
   embedSnippet: string;
   viewerFilters: boolean;
   branding: boolean;
+  hasSharePassword: boolean;
+  updatingPassword?: boolean;
+  publishing?: boolean;
   onToggleViewerFilters: () => void;
   onToggleBranding: () => void;
   onCopyUrl: () => void;
   onKeepDraft: () => void;
   onTogglePublishState: () => void;
+  onSetSharePassword: (password: string) => void;
+  onRemoveSharePassword: () => void;
 }
 
 export function PublishDialog({
@@ -25,12 +32,23 @@ export function PublishDialog({
   embedSnippet,
   viewerFilters,
   branding,
+  hasSharePassword,
+  updatingPassword,
+  publishing,
   onToggleViewerFilters,
   onToggleBranding,
   onCopyUrl,
   onKeepDraft,
   onTogglePublishState,
+  onSetSharePassword,
+  onRemoveSharePassword,
 }: PublishDialogProps) {
+  const [passwordInput, setPasswordInput] = React.useState("");
+
+  React.useEffect(() => {
+    if (open) setPasswordInput("");
+  }, [open]);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent widthClassName="w-[480px]">
@@ -63,6 +81,41 @@ export function PublishDialog({
               <span className="text-[13px] text-ink-1">Show AiDi branding</span>
               <Switch checked={branding} onCheckedChange={onToggleBranding} />
             </div>
+
+            <div className="border-t border-border-subtle py-2.5">
+              <div className="mb-2 text-[13px] text-ink-1">Password protection</div>
+              {hasSharePassword ? (
+                <div className="flex items-center justify-between">
+                  <span className="text-[12px] text-ink-2">Viewers need a password to see this dashboard</span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={onRemoveSharePassword}
+                    disabled={updatingPassword}
+                  >
+                    {updatingPassword ? "Removing…" : "Remove"}
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="password"
+                    value={passwordInput}
+                    onChange={(e) => setPasswordInput(e.target.value)}
+                    placeholder="At least 4 characters"
+                    className="mt-0 flex-1"
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={updatingPassword || passwordInput.length < 4}
+                    onClick={() => onSetSharePassword(passwordInput)}
+                  >
+                    {updatingPassword ? "Setting…" : "Set"}
+                  </Button>
+                </div>
+              )}
+            </div>
           </>
         )}
 
@@ -73,9 +126,10 @@ export function PublishDialog({
           <Button
             variant={isPublished ? "outline" : "primary"}
             onClick={onTogglePublishState}
+            disabled={publishing}
             style={isPublished ? { background: "#2a1518", color: "var(--color-brand-red)", borderColor: "#2a1518" } : undefined}
           >
-            {isPublished ? "Unpublish" : "Publish now"}
+            {publishing ? "Working…" : isPublished ? "Unpublish" : "Publish now"}
           </Button>
         </div>
       </DialogContent>

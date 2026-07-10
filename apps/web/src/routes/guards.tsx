@@ -1,14 +1,24 @@
 import { Navigate, Outlet } from "react-router-dom";
 import { useApp } from "@/context/AppContext";
 
+function SessionCheck() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-bg-1">
+      <div className="h-6 w-6 animate-spin rounded-full border-2 border-border-strong border-t-brand-violet" />
+    </div>
+  );
+}
+
 export function RequireAuth() {
-  const { session } = useApp();
+  const { session, sessionLoading } = useApp();
+  if (sessionLoading) return <SessionCheck />;
   if (!session) return <Navigate to="/login" replace />;
   return <Outlet />;
 }
 
 export function PublicOnly() {
-  const { session } = useApp();
-  if (session) return <Navigate to="/projects" replace />;
+  const { session, sessionLoading, isPasswordRecovery } = useApp();
+  if (sessionLoading) return <SessionCheck />;
+  if (session && !isPasswordRecovery) return <Navigate to="/projects" replace />;
   return <Outlet />;
 }

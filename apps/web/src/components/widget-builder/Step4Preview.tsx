@@ -8,12 +8,13 @@ interface Step4PreviewProps {
   ft: WidgetFineTune;
   chosenType: WidgetType;
   saveAsTemplate: boolean;
+  saving?: boolean;
   onToggleTemplate: () => void;
   onBack: () => void;
   onSave: () => void;
 }
 
-export function Step4Preview({ ft, chosenType, saveAsTemplate, onToggleTemplate, onBack, onSave }: Step4PreviewProps) {
+export function Step4Preview({ ft, chosenType, saveAsTemplate, saving, onToggleTemplate, onBack, onSave }: Step4PreviewProps) {
   return (
     <div>
       <Card className="mb-5">
@@ -32,8 +33,8 @@ export function Step4Preview({ ft, chosenType, saveAsTemplate, onToggleTemplate,
         <Button variant="ghost" size="sm" onClick={onBack}>
           ← Back
         </Button>
-        <Button variant="success" onClick={onSave}>
-          Save widget
+        <Button variant="success" onClick={onSave} disabled={saving}>
+          {saving ? "Saving…" : "Save widget"}
         </Button>
       </div>
     </div>

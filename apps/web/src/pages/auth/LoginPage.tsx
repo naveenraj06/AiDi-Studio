@@ -6,14 +6,18 @@ import AuthLayout from "./AuthLayout";
 import { FormField } from "./FormField";
 
 export default function LoginPage() {
-  const { login, toast } = useApp();
+  const { login, loginWithOAuth } = useApp();
 
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [errors, setErrors] = React.useState<Record<string, string>>({});
+  const [pending, setPending] = React.useState(false);
 
-  const handleLogin = () => {
-    const result = login(email, password);
+  const handleLogin = async () => {
+    setPending(true);
+    setErrors({});
+    const result = await login(email, password);
+    setPending(false);
     if (!result.ok && result.errors) setErrors(result.errors);
   };
 
@@ -24,13 +28,13 @@ export default function LoginPage() {
 
       <div className="mb-[18px] flex flex-col gap-2">
         <button
-          onClick={() => toast("Google OAuth simulated", "info")}
+          onClick={() => loginWithOAuth("google")}
           className="flex items-center justify-center gap-2 rounded-[9px] border border-border-strong bg-bg-2 p-2.5 text-[13px] font-semibold text-ink-1 transition-colors hover:bg-bg-3"
         >
           <span>G</span> Continue with Google
         </button>
         <button
-          onClick={() => toast("GitHub OAuth simulated", "info")}
+          onClick={() => loginWithOAuth("github")}
           className="flex items-center justify-center gap-2 rounded-[9px] border border-border-strong bg-bg-2 p-2.5 text-[13px] font-semibold text-ink-1 transition-colors hover:bg-bg-3"
         >
           <span>⌥</span> Continue with GitHub
@@ -58,8 +62,8 @@ export default function LoginPage() {
         }
       />
 
-      <Button onClick={handleLogin} className="mt-3 w-full">
-        Log in
+      <Button onClick={handleLogin} disabled={pending} className="mt-3 w-full">
+        {pending ? "Logging in…" : "Log in"}
       </Button>
       <div className="mt-[18px] text-center text-[12px] text-ink-3">
         No account? <Link to="/signup">Sign up</Link>

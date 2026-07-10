@@ -7,6 +7,10 @@ import { randomSuffix, slugify } from "../lib/slug.js";
 import { supabase } from "../lib/supabase.js";
 
 const DASHBOARD_SELECT = "*, dashboard_tiles(widget_id, position, col_span, row_span)";
+// Anonymous public viewers can't call the authenticated /widgets endpoint to
+// resolve tile names/types, so the public route embeds them directly.
+const PUBLIC_DASHBOARD_SELECT =
+  "*, dashboard_tiles(widget_id, position, col_span, row_span, widget:widgets(name, type))";
 
 const createSchema = z.object({
   name: z.string().trim().min(1, "Enter a dashboard name"),
@@ -185,7 +189,7 @@ export async function publicDashboardRoutes(app: FastifyInstance) {
 
     const { data: dashboard, error } = await supabase
       .from("dashboards")
-      .select(DASHBOARD_SELECT)
+      .select(PUBLIC_DASHBOARD_SELECT)
       .eq("slug", slug)
       .maybeSingle<DashboardRow>();
     if (error || !dashboard || dashboard.status !== "published") {

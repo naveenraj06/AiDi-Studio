@@ -89,6 +89,7 @@ export interface DashboardTileRow {
   position: number;
   col_span: number;
   row_span: number;
+  widget?: { name: string; type: string } | null;
 }
 
 export interface DashboardRow {
@@ -111,7 +112,12 @@ export function serializeDashboard(d: DashboardRow) {
     has_share_password: d.share_password_hash != null,
     updated_at: d.updated_at,
     widgetIds: tiles.map((t) => t.widget_id),
-    layout: tiles.map((t) => ({ id: t.widget_id, colSpan: t.col_span, rowSpan: t.row_span })),
+    layout: tiles.map((t) => ({
+      id: t.widget_id,
+      colSpan: t.col_span,
+      rowSpan: t.row_span,
+      ...(t.widget ? { name: t.widget.name, type: t.widget.type } : {}),
+    })),
   };
 }
 

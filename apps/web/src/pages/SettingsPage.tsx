@@ -1,71 +1,116 @@
 import * as React from "react";
 import { useApp } from "@/context/AppContext";
+import { supabase } from "@/lib/supabaseClient";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-const BACKUP_CODES = [
-  "4F2A-9K1D",
-  "7Q3E-2M8L",
-  "1X6P-5R0T",
-  "8C4N-3W7B",
-  "2H9J-6Y1V",
-  "5G0S-4Z8K",
-  "9D3F-1L6Q",
-  "6B7M-2X5N",
-];
-
-interface SessionRow {
-  id: string;
-  device: string;
-  location: string;
-  lastActive: string;
-  current: boolean;
-}
-
-const INITIAL_SESSIONS: SessionRow[] = [
-  { id: "s1", device: "Chrome on macOS", location: "San Francisco, US", lastActive: "active now", current: true },
-  { id: "s2", device: "Safari on iPhone", location: "San Francisco, US", lastActive: "2h ago", current: false },
-  { id: "s3", device: "Firefox on Windows", location: "Austin, US", lastActive: "3d ago", current: false },
-];
-
 export default function SettingsPage() {
   const { session, toast, logoutAllDevices } = useApp();
 
   const [name, setName] = React.useState(session?.user.display_name ?? "");
-  const [totpEnabled, setTotpEnabled] = React.useState(false);
-  const [show2faSetup, setShow2faSetup] = React.useState(false);
-  const [showBackupCodes, setShowBackupCodes] = React.useState(false);
-  const [totpCode, setTotpCode] = React.useState("");
-  const [sessions, setSessions] = React.useState<SessionRow[]>(INITIAL_SESSIONS);
+  const [savingProfile, setSavingProfile] = React.useState(false);
 
-  const onToggle2fa = () => {
-    if (totpEnabled) {
-      setTotpEnabled(false);
-      setShowBackupCodes(false);
-      setShow2faSetup(false);
+  const [currentPassword, setCurrentPassword] = React.useState("");
+  const [newPassword, setNewPassword] = React.useState("");
+  const [savingPassword, setSavingPassword] = React.useState(false);
+
+  const [enabledFactorId, setEnabledFactorId] = React.useState<string | null>(null);
+  const [checkingMfa, setCheckingMfa] = React.useState(true);
+  const [enrolling, setEnrolling] = React.useState(false);
+  const [pendingFactorId, setPendingFactorId] = React.useState<string | null>(null);
+  const [qrCode, setQrCode] = React.useState<string | null>(null);
+  const [secret, setSecret] = React.useState<string | null>(null);
+  const [totpCode, setTotpCode] = React.useState("");
+  const [confirming, setConfirming] = React.useState(false);
+
+  React.useEffect(() => {
+    supabase.auth.mfa.listFactors().then(({ data }) => {
+      const verified = data?.totp?.find((f) => f.status === "verified");
+      setEnabledFactorId(verified?.id ?? null);
+      setCheckingMfa(false);
+    });
+  }, []);
+
+  const totpEnabled = !!enabledFactorId;
+
+  const onSaveProfile = async () => {
+    setSavingProfile(true);
+    const { error } = await supabase.auth.updateUser({ data: { name } });
+    setSavingProfile(false);
+    if (error) return toast(error.message, "error");
+    toast("Profile updated", "success");
+  };
+
+  const onUpdatePassword = async () => {
+    if (!session) return;
+    if (newPassword.length < 8) return toast("New password must be at least 8 characters", "error");
+    setSavingPassword(true);
+    const { error: verifyError } = await supabase.auth.signInWithPassword({
+      email: session.user.email,
+      password: currentPassword,
+    });
+    if (verifyError) {
+      setSavingPassword(false);
+      return toast("Current password is incorrect", "error");
+    }
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    setSavingPassword(false);
+    if (error) return toast(error.message, "error");
+    setCurrentPassword("");
+    setNewPassword("");
+    toast("Password updated", "success");
+  };
+
+  const onToggle2fa = async () => {
+    if (totpEnabled && enabledFactorId) {
+      const { error } = await supabase.auth.mfa.unenroll({ factorId: enabledFactorId });
+      if (error) return toast(error.message, "error");
+      setEnabledFactorId(null);
       toast("2FA disabled", "info");
       return;
     }
-    setShow2faSetup(true);
-    setShowBackupCodes(false);
+    setEnrolling(true);
+    const { data, error } = await supabase.auth.mfa.enroll({ factorType: "totp" });
+    setEnrolling(false);
+    if (error) return toast(error.message, "error");
+    setPendingFactorId(data.id);
+    setQrCode(data.totp.qr_code);
+    setSecret(data.totp.secret);
   };
 
-  const onConfirm2fa = () => {
-    if (totpCode.length < 6) {
-      toast("Enter the 6-digit code", "error");
-      return;
+  const onConfirm2fa = async () => {
+    if (!pendingFactorId) return;
+    if (totpCode.length < 6) return toast("Enter the 6-digit code", "error");
+    setConfirming(true);
+    const { data: challenge, error: challengeError } = await supabase.auth.mfa.challenge({
+      factorId: pendingFactorId,
+    });
+    if (challengeError || !challenge) {
+      setConfirming(false);
+      return toast(challengeError?.message ?? "Couldn't start verification", "error");
     }
-    setTotpEnabled(true);
-    setShow2faSetup(false);
-    setShowBackupCodes(true);
+    const { error } = await supabase.auth.mfa.verify({
+      factorId: pendingFactorId,
+      challengeId: challenge.id,
+      code: totpCode,
+    });
+    setConfirming(false);
+    if (error) return toast(error.message, "error");
+    setEnabledFactorId(pendingFactorId);
+    setPendingFactorId(null);
+    setQrCode(null);
+    setSecret(null);
+    setTotpCode("");
     toast("2FA enabled", "success");
   };
 
-  const onRevoke = (id: string) => {
-    setSessions((prev) => prev.filter((s) => s.id !== id));
-    toast("Session revoked", "success");
+  const onCancel2fa = () => {
+    setPendingFactorId(null);
+    setQrCode(null);
+    setSecret(null);
+    setTotpCode("");
   };
 
   return (
@@ -84,19 +129,31 @@ export default function SettingsPage() {
             <Input id="settings-email" value={session?.user.email ?? ""} disabled className="bg-surface-sunken text-ink-3" />
           </div>
         </div>
-        <Button size="sm" onClick={() => toast("Profile updated", "success")} className="mt-3.5">
-          Save changes
+        <Button size="sm" onClick={onSaveProfile} disabled={savingProfile} className="mt-3.5">
+          {savingProfile ? "Saving…" : "Save changes"}
         </Button>
       </Card>
 
       <Card className="mb-[18px]">
         <div className="mb-4 text-[14px] font-semibold text-ink-1">Change password</div>
         <div className="flex max-w-[320px] flex-col gap-3">
-          <Input type="password" placeholder="Current password" className="mt-0" />
-          <Input type="password" placeholder="New password" className="mt-0" />
+          <Input
+            type="password"
+            placeholder="Current password"
+            value={currentPassword}
+            onChange={(e) => setCurrentPassword(e.target.value)}
+            className="mt-0"
+          />
+          <Input
+            type="password"
+            placeholder="New password"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            className="mt-0"
+          />
         </div>
-        <Button variant="outline" size="sm" onClick={() => toast("Password updated", "success")} className="mt-3.5">
-          Update password
+        <Button variant="outline" size="sm" onClick={onUpdatePassword} disabled={savingPassword} className="mt-3.5">
+          {savingPassword ? "Updating…" : "Update password"}
         </Button>
       </Card>
 
@@ -105,31 +162,33 @@ export default function SettingsPage() {
           <div>
             <div className="text-[14px] font-semibold text-ink-1">Two-factor authentication</div>
             <div className="mt-1 text-[12px] text-ink-3">
-              {totpEnabled ? "Enabled — backup codes issued" : "Not enabled — add an extra layer of security"}
+              {checkingMfa
+                ? "Checking status…"
+                : totpEnabled
+                  ? "Enabled for your account"
+                  : "Not enabled — add an extra layer of security"}
             </div>
           </div>
           <Button
             size="sm"
             onClick={onToggle2fa}
+            disabled={checkingMfa || enrolling}
             style={totpEnabled ? { background: "#2a1518", color: "var(--color-brand-red)" } : undefined}
           >
-            {totpEnabled ? "Disable" : "Enable"}
+            {enrolling ? "Starting…" : totpEnabled ? "Disable" : "Enable"}
           </Button>
         </div>
 
-        {show2faSetup && (
+        {qrCode && (
           <div className="mt-4 flex items-center gap-4 border-t border-border-subtle pt-4">
-            <div
-              className="h-[100px] w-[100px] shrink-0 rounded-md"
-              style={{
-                background:
-                  "repeating-conic-gradient(#f5f5f7 0% 25%, #0b0b10 0% 50%) 0 0/20px 20px",
-              }}
-            />
+            <img src={qrCode} alt="Scan with your authenticator app" className="h-[100px] w-[100px] shrink-0 rounded-md bg-white p-1" />
             <div className="flex-1">
-              <div className="mb-2 text-[12px] text-ink-2">
+              <div className="mb-1 text-[12px] text-ink-2">
                 Scan with your authenticator app, then enter the 6-digit code.
               </div>
+              {secret && (
+                <div className="mb-2 break-all font-mono text-[11px] text-ink-3">Or enter manually: {secret}</div>
+              )}
               <div className="flex gap-2">
                 <Input
                   value={totpCode}
@@ -137,56 +196,26 @@ export default function SettingsPage() {
                   placeholder="123456"
                   className="mt-0 w-[110px] font-mono"
                 />
-                <Button size="sm" onClick={onConfirm2fa}>
-                  Confirm
+                <Button size="sm" onClick={onConfirm2fa} disabled={confirming}>
+                  {confirming ? "Confirming…" : "Confirm"}
+                </Button>
+                <Button size="sm" variant="ghost" onClick={onCancel2fa}>
+                  Cancel
                 </Button>
               </div>
-            </div>
-          </div>
-        )}
-
-        {showBackupCodes && (
-          <div className="mt-4 border-t border-border-subtle pt-4">
-            <div className="mb-2.5 text-[12px] text-ink-2">Backup codes — store these somewhere safe:</div>
-            <div className="grid grid-cols-2 gap-2 font-mono text-[12px] text-brand-cyan">
-              {BACKUP_CODES.map((c) => (
-                <div key={c} className="rounded-md bg-surface-sunken px-2.5 py-1.5">
-                  {c}
-                </div>
-              ))}
             </div>
           </div>
         )}
       </Card>
 
       <Card>
-        <div className="mb-3.5 flex items-center justify-between">
-          <div className="text-[14px] font-semibold text-ink-1">Active sessions</div>
+        <div className="mb-1 flex items-center justify-between">
+          <div className="text-[14px] font-semibold text-ink-1">Sessions</div>
           <div onClick={logoutAllDevices} className="cursor-pointer text-[12px] text-brand-red">
-            Log out of all devices
+            Log out of all other devices
           </div>
         </div>
-        {sessions.map((s) => (
-          <div
-            key={s.id}
-            className="flex items-center justify-between border-b border-border-subtle py-2.5 last:border-b-0"
-          >
-            <div>
-              <div className="text-[13px] font-medium text-ink-1">
-                {s.device}
-                {s.current && <span className="ml-1 text-[10px] font-bold text-brand-green"> · THIS DEVICE</span>}
-              </div>
-              <div className="text-[11px] text-ink-3">
-                {s.location} · {s.lastActive}
-              </div>
-            </div>
-            {!s.current && (
-              <div onClick={() => onRevoke(s.id)} className="cursor-pointer text-[12px] text-brand-red">
-                Revoke
-              </div>
-            )}
-          </div>
-        ))}
+        <div className="text-[12px] text-ink-3">You're currently signed in as {session?.user.email}.</div>
       </Card>
     </div>
   );

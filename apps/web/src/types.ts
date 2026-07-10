@@ -11,12 +11,10 @@ export interface User {
   email: string;
   display_name: string;
   email_verified: boolean;
-  totp_enabled: boolean;
 }
 
 export interface Session {
   user: User;
-  mfaVerified: boolean;
 }
 
 export interface Project {
@@ -50,7 +48,10 @@ export interface Widget {
   name: string;
   type: WidgetType;
   is_template: boolean;
-  resource: string;
+  resource: string | null;
+  resource_id: string | null;
+  mapping: FieldMapping[] | null;
+  fine_tune: WidgetFineTune | null;
   updated_at: string;
 }
 
@@ -79,6 +80,10 @@ export interface DashboardTile {
   id: string; // widget id
   colSpan: number;
   rowSpan: number;
+  // Only populated by the public dashboard endpoint, which anonymous
+  // viewers can't otherwise resolve via the authenticated widgets list.
+  name?: string;
+  type?: WidgetType;
 }
 
 export interface Dashboard {
@@ -86,10 +91,10 @@ export interface Dashboard {
   name: string;
   slug: string;
   status: "draft" | "published";
-  share_password_hash?: string | null;
+  has_share_password: boolean;
   updated_at: string;
   widgetIds: string[];
-  layout?: DashboardTile[];
+  layout: DashboardTile[];
 }
 
 export interface TeamMember {

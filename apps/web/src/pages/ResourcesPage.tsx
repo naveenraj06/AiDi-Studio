@@ -1,66 +1,84 @@
 import * as React from "react";
 import { useParams } from "react-router-dom";
 import { useApp } from "@/context/AppContext";
+import { useProject } from "@/hooks/useProjects";
+import { useCreateResource, useDeleteResource, useResources, useTestResourceConnection } from "@/hooks/useResources";
 import { Button } from "@/components/ui/button";
-import { ImportResourceDialog, type ManualForm } from "@/components/resources/ImportResourceDialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { ImportResourceDialog, type ResourceFormResult } from "@/components/resources/ImportResourceDialog";
+import type { ApiResource } from "@/types";
 
 export default function ResourcesPage() {
   const { projectId } = useParams<{ projectId: string }>();
-  const { projects, resourcesByProject, actions, toast } = useApp();
+  const { toast } = useApp();
 
-  const project = projects.find((p) => p.id === projectId);
-  const resources = (projectId && resourcesByProject[projectId]) || [];
+  const { data: project, isLoading: projectLoading } = useProject(projectId);
+  const { data: resources, isLoading, isError } = useResources(projectId);
+  const createResource = useCreateResource(projectId ?? "");
+  const testConnection = useTestResourceConnection(projectId ?? "");
+  const deleteResource = useDeleteResource(projectId ?? "");
 
   const [showImport, setShowImport] = React.useState(false);
-  const [testing, setTesting] = React.useState<Record<string, boolean>>({});
+  const [testingId, setTestingId] = React.useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = React.useState<ApiResource | null>(null);
 
-  if (!project || !projectId) return null;
+  if (!projectId) return null;
 
-  const addResource = (tab: "manual" | "postman" | "openapi" | "curl", form: ManualForm) => {
-    const fallbackName =
-      tab === "postman"
-        ? "Imported Postman Collection"
-        : tab === "openapi"
-          ? "Imported OpenAPI Spec"
-          : tab === "curl"
-            ? "Imported cURL Resource"
-            : "";
-    const name = form.name || fallbackName;
-    if (!name) {
-      toast("Enter a name for this resource", "error");
-      return;
+  const handleAdd = async (result: ResourceFormResult) => {
+    try {
+      await createResource.mutateAsync(result);
+      setShowImport(false);
+      toast("Resource added — run Test to verify it's reachable", "success");
+    } catch {
+      toast("Couldn't add the resource — try again", "error");
     }
-    const id = "r" + Math.random().toString(36).slice(2, 8);
-    actions.setResources(projectId, (list) => [
-      ...list,
-      {
-        id,
-        name,
-        url: form.url || "https://api.example.com/v1/data",
-        method: "GET",
-        auth_type: form.auth_type || "none",
-        status: "healthy",
-        last_tested_at: new Date().toISOString(),
-        last_test_latency_ms: 120 + Math.floor(Math.random() * 300),
-        imported_from: tab,
-        usedBy: 0,
-      },
-    ]);
-    setShowImport(false);
-    toast("Resource connected — test passed", "success");
   };
 
-  const testConnection = (id: string) => {
-    setTesting((t) => ({ ...t, [id]: true }));
-    setTimeout(() => {
-      const latency = 80 + Math.floor(Math.random() * 350);
-      actions.setResources(projectId, (list) =>
-        list.map((r) => (r.id === id ? { ...r, status: "healthy", last_tested_at: new Date().toISOString(), last_test_latency_ms: latency } : r)),
+  const handleTest = async (id: string) => {
+    setTestingId(id);
+    try {
+      const resource = await testConnection.mutateAsync(id);
+      toast(
+        resource.status === "healthy"
+          ? `Connection healthy — ${resource.last_test_latency_ms}ms`
+          : "Connection failed",
+        resource.status === "healthy" ? "success" : "error",
       );
-      setTesting((t) => ({ ...t, [id]: false }));
-      toast(`Connection healthy — ${latency}ms`, "success");
-    }, 900);
+    } catch {
+      toast("Couldn't test the connection — try again", "error");
+    } finally {
+      setTestingId(null);
+    }
   };
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    try {
+      await deleteResource.mutateAsync(deleteTarget.id);
+      toast("Resource deleted", "success");
+      setDeleteTarget(null);
+    } catch {
+      toast("Couldn't delete the resource — try again", "error");
+    }
+  };
+
+  if (projectLoading) {
+    return (
+      <div className="max-w-[1200px] px-11 py-9">
+        <div className="h-6 w-40 animate-pulse rounded bg-bg-2" />
+      </div>
+    );
+  }
+
+  if (!project) {
+    return (
+      <div className="max-w-[1200px] px-11 py-9">
+        <div className="rounded-xl border border-border-default bg-bg-1 p-8 text-center text-[13px] text-ink-3">
+          Project not found, or you don't have access to it.
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-[1200px] px-11 py-9">
@@ -68,57 +86,115 @@ export default function ResourcesPage() {
         <div>
           <div className="font-display text-[24px] font-bold text-ink-1">API Resources</div>
           <div className="mt-1 text-[13px] text-ink-3">
-            {project.name} · {resources.length} connected · GET only in v1
+            {project.name} · {resources?.length ?? 0} connected · GET only in v1
           </div>
         </div>
         <Button onClick={() => setShowImport(true)}>+ Add resource</Button>
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-border-default bg-bg-1">
-        <div
-          className="grid gap-2 border-b border-border-default px-[18px] py-3 text-[11px] uppercase tracking-[0.03em] text-ink-3"
-          style={{ gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 90px" }}
-        >
-          <div>Resource</div>
-          <div>Auth</div>
-          <div>Status</div>
-          <div>Latency</div>
-          <div>Used by</div>
-          <div />
+      {isLoading && (
+        <div className="flex flex-col gap-2">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="h-14 animate-pulse rounded-lg border border-border-default bg-bg-2" />
+          ))}
         </div>
-        {resources.map((r) => {
-          const statusColor = r.status === "healthy" ? "var(--color-brand-green)" : "var(--color-brand-red)";
-          return (
-            <div
-              key={r.id}
-              className="grid items-center gap-2 border-b border-border-subtle px-[18px] py-3.5 text-[13px] last:border-b-0"
-              style={{ gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 90px" }}
-            >
-              <div className="min-w-0">
-                <div className="overflow-hidden text-ellipsis whitespace-nowrap font-semibold text-ink-1">{r.name}</div>
-                <div className="overflow-hidden text-ellipsis whitespace-nowrap font-mono text-[11px] text-ink-3">{r.url}</div>
-              </div>
-              <div className="text-[12px] capitalize text-ink-2">{r.auth_type}</div>
-              <div>
-                <span className="inline-flex items-center gap-1.5 text-[12px]" style={{ color: statusColor }}>
-                  <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: statusColor }} />
-                  {r.status}
-                </span>
-              </div>
-              <div className="text-[12px] text-ink-2">{r.last_test_latency_ms ? `${r.last_test_latency_ms}ms` : "—"}</div>
-              <div className="text-[12px] text-ink-2">{r.usedBy} widgets</div>
-              <div
-                onClick={() => testConnection(r.id)}
-                className="cursor-pointer text-right text-[12px] font-semibold text-brand-violet-light"
-              >
-                {testing[r.id] ? "Testing…" : "Test"}
-              </div>
-            </div>
-          );
-        })}
-      </div>
+      )}
 
-      <ImportResourceDialog open={showImport} onOpenChange={setShowImport} onSubmit={addResource} />
+      {isError && (
+        <div className="rounded-xl border border-border-default bg-bg-1 p-8 text-center text-[13px] text-ink-3">
+          Couldn't load API resources. Try refreshing.
+        </div>
+      )}
+
+      {!isLoading && !isError && resources && resources.length === 0 && (
+        <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-border-strong bg-bg-1 px-8 py-16 text-center">
+          <div className="text-[28px]">⇄</div>
+          <div className="text-[14px] font-semibold text-ink-1">Connect your first API</div>
+          <div className="max-w-[320px] text-[13px] text-ink-3">
+            Widgets read from API resources — add one to start building.
+          </div>
+          <Button onClick={() => setShowImport(true)} className="mt-2">
+            + Add resource
+          </Button>
+        </div>
+      )}
+
+      {!isLoading && !isError && resources && resources.length > 0 && (
+        <div className="overflow-hidden rounded-xl border border-border-default bg-bg-1">
+          <div
+            className="grid gap-2 border-b border-border-default px-[18px] py-3 text-[11px] uppercase tracking-[0.03em] text-ink-3"
+            style={{ gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 130px" }}
+          >
+            <div>Resource</div>
+            <div>Auth</div>
+            <div>Status</div>
+            <div>Latency</div>
+            <div>Used by</div>
+            <div />
+          </div>
+          {resources.map((r) => {
+            const statusColor = r.status === "healthy" ? "var(--color-brand-green)" : "var(--color-brand-red)";
+            const testing = testingId === r.id;
+            return (
+              <div
+                key={r.id}
+                className="grid items-center gap-2 border-b border-border-subtle px-[18px] py-3.5 text-[13px] last:border-b-0"
+                style={{ gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 90px" }}
+              >
+                <div className="min-w-0">
+                  <div className="overflow-hidden text-ellipsis whitespace-nowrap font-semibold text-ink-1">{r.name}</div>
+                  <div className="overflow-hidden text-ellipsis whitespace-nowrap font-mono text-[11px] text-ink-3">{r.url}</div>
+                </div>
+                <div className="text-[12px] capitalize text-ink-2">{r.auth_type}</div>
+                <div>
+                  <span className="inline-flex items-center gap-1.5 text-[12px]" style={{ color: statusColor }}>
+                    <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: statusColor }} />
+                    {r.status}
+                  </span>
+                </div>
+                <div className="text-[12px] text-ink-2">{r.last_test_latency_ms ? `${r.last_test_latency_ms}ms` : "—"}</div>
+                <div className="text-[12px] text-ink-2">{r.usedBy} widgets</div>
+                <div className="flex items-center justify-end gap-3">
+                  <div
+                    onClick={testing ? undefined : () => handleTest(r.id)}
+                    className="cursor-pointer text-[12px] font-semibold text-brand-violet-light"
+                    style={testing ? { opacity: 0.6, pointerEvents: "none" } : undefined}
+                  >
+                    {testing ? "Testing…" : "Test"}
+                  </div>
+                  <div
+                    onClick={() => setDeleteTarget(r)}
+                    title="Delete resource"
+                    className="cursor-pointer text-[12px] text-ink-3 hover:text-brand-red"
+                  >
+                    ✕
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <ImportResourceDialog
+        open={showImport}
+        onOpenChange={setShowImport}
+        onSubmit={handleAdd}
+        submitting={createResource.isPending}
+      />
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        title="Delete resource?"
+        description={
+          deleteTarget && deleteTarget.usedBy > 0
+            ? `"${deleteTarget.name}" is used by ${deleteTarget.usedBy} widget${deleteTarget.usedBy === 1 ? "" : "s"}. Deleting it leaves those widgets without a data source — they'll need a new resource assigned.`
+            : `This permanently deletes "${deleteTarget?.name}".`
+        }
+        confirming={deleteResource.isPending}
+        onConfirm={handleDelete}
+      />
     </div>
   );
 }

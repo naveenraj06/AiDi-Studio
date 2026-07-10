@@ -16,28 +16,60 @@ const TABS: { key: ImportTab; label: string }[] = [
   { key: "curl", label: "cURL" },
 ];
 
-export interface ManualForm {
+export interface ResourceFormResult {
   name: string;
   url: string;
-  auth_type: AuthType;
+  authType: AuthType;
+  importedFrom: "postman" | "openapi" | "curl" | "manual";
 }
 
 interface ImportResourceDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSubmit: (tab: ImportTab, form: ManualForm) => void;
+  onSubmit: (result: ResourceFormResult) => void;
+  submitting?: boolean;
 }
 
-export function ImportResourceDialog({ open, onOpenChange, onSubmit }: ImportResourceDialogProps) {
+const URL_PATTERN = /https?:\/\/\S+/;
+
+export function ImportResourceDialog({ open, onOpenChange, onSubmit, submitting }: ImportResourceDialogProps) {
   const [tab, setTab] = React.useState<ImportTab>("manual");
-  const [form, setForm] = React.useState<ManualForm>({ name: "", url: "", auth_type: "none" });
+  const [manualForm, setManualForm] = React.useState({ name: "", url: "", authType: "none" as AuthType });
+  const [openapiUrl, setOpenapiUrl] = React.useState("");
+  const [curlCommand, setCurlCommand] = React.useState("");
+  const [error, setError] = React.useState("");
 
   React.useEffect(() => {
     if (open) {
       setTab("manual");
-      setForm({ name: "", url: "", auth_type: "none" });
+      setManualForm({ name: "", url: "", authType: "none" });
+      setOpenapiUrl("");
+      setCurlCommand("");
+      setError("");
     }
   }, [open]);
+
+  const handleSubmit = () => {
+    setError("");
+    if (tab === "manual") {
+      if (!manualForm.name.trim()) return setError("Enter a name");
+      if (!URL_PATTERN.test(manualForm.url.trim())) return setError("Enter a valid https:// URL");
+      onSubmit({ name: manualForm.name.trim(), url: manualForm.url.trim(), authType: manualForm.authType, importedFrom: "manual" });
+      return;
+    }
+    if (tab === "openapi") {
+      if (!URL_PATTERN.test(openapiUrl.trim())) return setError("Enter a valid OpenAPI URL");
+      onSubmit({ name: "Imported OpenAPI Spec", url: openapiUrl.trim(), authType: "none", importedFrom: "openapi" });
+      return;
+    }
+    if (tab === "curl") {
+      const match = curlCommand.match(URL_PATTERN);
+      if (!match) return setError("Couldn't find a URL in that command");
+      const authType: AuthType = /authorization:\s*bearer/i.test(curlCommand) ? "bearer" : "none";
+      onSubmit({ name: "Imported cURL Resource", url: match[0], authType, importedFrom: "curl" });
+      return;
+    }
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -48,7 +80,10 @@ export function ImportResourceDialog({ open, onOpenChange, onSubmit }: ImportRes
           {TABS.map((t) => (
             <div
               key={t.key}
-              onClick={() => setTab(t.key)}
+              onClick={() => {
+                setTab(t.key);
+                setError("");
+              }}
               className="flex-1 cursor-pointer rounded-md py-1.5 text-center text-[12px] font-semibold"
               style={{
                 color: tab === t.key ? "#fff" : "var(--color-ink-2)",
@@ -66,8 +101,8 @@ export function ImportResourceDialog({ open, onOpenChange, onSubmit }: ImportRes
               <Label htmlFor="res-name">Name</Label>
               <Input
                 id="res-name"
-                value={form.name}
-                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                value={manualForm.name}
+                onChange={(e) => setManualForm((f) => ({ ...f, name: e.target.value }))}
                 placeholder="e.g. Stripe Revenue"
               />
             </div>
@@ -75,8 +110,8 @@ export function ImportResourceDialog({ open, onOpenChange, onSubmit }: ImportRes
               <Label htmlFor="res-url">URL</Label>
               <Input
                 id="res-url"
-                value={form.url}
-                onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))}
+                value={manualForm.url}
+                onChange={(e) => setManualForm((f) => ({ ...f, url: e.target.value }))}
                 placeholder="https://api.example.com/v1/data"
                 className="font-mono"
               />
@@ -90,7 +125,7 @@ export function ImportResourceDialog({ open, onOpenChange, onSubmit }: ImportRes
               </div>
               <div className="flex-1">
                 <Label htmlFor="res-auth">Auth type</Label>
-                <Select value={form.auth_type} onValueChange={(v) => setForm((f) => ({ ...f, auth_type: v as AuthType }))}>
+                <Select value={manualForm.authType} onValueChange={(v) => setManualForm((f) => ({ ...f, authType: v as AuthType }))}>
                   <SelectTrigger id="res-auth">
                     <SelectValue />
                   </SelectTrigger>
@@ -108,14 +143,23 @@ export function ImportResourceDialog({ open, onOpenChange, onSubmit }: ImportRes
 
         {tab === "postman" && (
           <div className="rounded-[10px] border-2 border-dashed border-border-strong p-[30px] text-center text-[13px] text-ink-3">
-            Drop a Postman collection .json file, or click to browse
+            Postman collection import isn't available yet — use the Manual tab to add resources one at a time.
           </div>
         )}
 
         {tab === "openapi" && (
           <div>
-            <Label htmlFor="res-openapi">OpenAPI/Swagger URL or file</Label>
-            <Input id="res-openapi" placeholder="https://api.example.com/openapi.json" className="font-mono" />
+            <Label htmlFor="res-openapi">OpenAPI/Swagger URL</Label>
+            <Input
+              id="res-openapi"
+              value={openapiUrl}
+              onChange={(e) => setOpenapiUrl(e.target.value)}
+              placeholder="https://api.example.com/openapi.json"
+              className="font-mono"
+            />
+            <div className="mt-1.5 text-[11px] text-ink-3">
+              Registers this URL as a resource. Schema introspection isn't implemented yet — fine-tune field mapping manually in the widget builder.
+            </div>
           </div>
         )}
 
@@ -124,17 +168,26 @@ export function ImportResourceDialog({ open, onOpenChange, onSubmit }: ImportRes
             <Label htmlFor="res-curl">Paste cURL command</Label>
             <Textarea
               id="res-curl"
+              value={curlCommand}
+              onChange={(e) => setCurlCommand(e.target.value)}
               placeholder="curl -H 'Authorization: Bearer ...' https://..."
               className="h-20"
             />
+            <div className="mt-1.5 text-[11px] text-ink-3">
+              We'll pull the URL (and Bearer auth, if present) out of the command.
+            </div>
           </div>
         )}
+
+        {error && <div className="mt-2.5 text-[11px] text-brand-red">{error}</div>}
 
         <div className="mt-[22px] flex justify-end gap-2.5">
           <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={() => onSubmit(tab, form)}>Add &amp; test connection</Button>
+          <Button onClick={handleSubmit} disabled={tab === "postman" || submitting}>
+            {submitting ? "Adding…" : "Add & test connection"}
+          </Button>
         </div>
       </DialogContent>
     </Dialog>
