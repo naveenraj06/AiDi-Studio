@@ -11,4 +11,10 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  server: {
+    // Codespaces/other tunnels serve the dev server through a forwarded
+    // hostname (e.g. *.app.github.dev), which Vite's Host-header check
+    // rejects by default.
+    allowedHosts: true,
+  },
 })
