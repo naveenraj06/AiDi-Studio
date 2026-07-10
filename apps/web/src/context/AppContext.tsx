@@ -2,6 +2,7 @@ import * as React from "react";
 import { useNavigate } from "react-router-dom";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabaseClient";
+import { registerToast } from "@/lib/toastBus";
 import type { Session, ToastKind, User } from "@/types";
 
 function isValidEmail(email: string) {
@@ -70,6 +71,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setToastState({ msg, kind });
     timerRef.current = setTimeout(() => setToastState(null), 2600);
   }, []);
+
+  // Registered on every render (not in an effect) so it's available synchronously
+  // before any child query can fail — the QueryClient lives outside React and
+  // uses this to surface fetch failures as toasts.
+  registerToast(toast);
 
   React.useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {

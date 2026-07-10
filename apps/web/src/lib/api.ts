@@ -13,6 +13,11 @@ export class ApiError extends Error {
   }
 }
 
+/** Turns any caught error into a user-facing message — pass a fallback for non-API errors (network failures, etc). */
+export function getErrorMessage(err: unknown, fallback: string): string {
+  return err instanceof ApiError ? err.message : fallback;
+}
+
 export async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const {
     data: { session },

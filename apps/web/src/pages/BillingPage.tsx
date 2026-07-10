@@ -2,7 +2,7 @@ import * as React from "react";
 import { useApp } from "@/context/AppContext";
 import { useProjects } from "@/hooks/useProjects";
 import { useBilling, useUpdateBilling } from "@/hooks/useBilling";
-import { ApiError } from "@/lib/api";
+import { getErrorMessage } from "@/lib/api";
 import type { Plan } from "@/types";
 import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -29,7 +29,7 @@ export default function BillingPage() {
       await updateBilling.mutateAsync({ plan: planKey });
       toast(`Switched to ${planKey[0].toUpperCase() + planKey.slice(1)} plan`, "success");
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : "Couldn't change plans", "error");
+      toast(getErrorMessage(err, "Couldn't change plans"), "error");
     }
   };
 

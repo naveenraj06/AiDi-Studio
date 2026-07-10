@@ -13,7 +13,7 @@ export default function EmbedPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const { toast } = useApp();
   const { data: project, isLoading: projectLoading } = useProject(projectId);
-  const { data: dashboards, isLoading } = useDashboards(projectId);
+  const { data: dashboards, isLoading, isError } = useDashboards(projectId);
 
   const published = (dashboards ?? []).filter((d) => d.status === "published");
 
@@ -54,7 +54,14 @@ export default function EmbedPage() {
         {isLoading &&
           [0, 1].map((i) => <div key={i} className="h-20 animate-pulse rounded-[10px] border border-border-default bg-bg-2" />)}
 
+        {isError && (
+          <div className="rounded-[10px] border border-border-default bg-bg-1 p-5 text-[13px] text-ink-3">
+            Couldn't load dashboards. Try refreshing.
+          </div>
+        )}
+
         {!isLoading &&
+          !isError &&
           published.map((d) => {
             const snippet = `<iframe src="${window.location.origin}/d/${d.slug}/embed" width="100%" height="600" frameborder="0"></iframe>`;
             return (
@@ -72,7 +79,7 @@ export default function EmbedPage() {
             );
           })}
 
-        {!isLoading && published.length === 0 && (
+        {!isLoading && !isError && published.length === 0 && (
           <div className="rounded-[10px] border border-border-default bg-bg-1 p-5 text-[13px] text-ink-3">
             No published dashboards yet — publish one from the dashboard canvas to get an embed snippet.
           </div>

@@ -15,5 +15,8 @@ export function usePublicDashboard(slug: string | undefined, password?: string) 
     },
     enabled: !!slug,
     retry: false,
+    // Locked (401) and not-found (404) are expected states this page renders
+    // its own dedicated UI for — a generic error toast on top would be noise.
+    meta: { silent: true },
   });
 }

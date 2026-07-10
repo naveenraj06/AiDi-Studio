@@ -5,7 +5,7 @@ import { useApp } from "@/context/AppContext";
 import { useProject } from "@/hooks/useProjects";
 import { useResources } from "@/hooks/useResources";
 import { useCreateWidget, useUpdateWidget, useWidgets } from "@/hooks/useWidgets";
-import { ApiError } from "@/lib/api";
+import { getErrorMessage } from "@/lib/api";
 import { suggestFor } from "@/components/widget-builder/suggestFor";
 import { StepProgress } from "@/components/widget-builder/StepProgress";
 import { Step1Resource } from "@/components/widget-builder/Step1Resource";
@@ -123,7 +123,7 @@ export default function WidgetBuilderPage() {
       }
       navigate(`/projects/${projectId}/widgets`);
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : "Couldn't save the widget — try again", "error");
+      toast(getErrorMessage(err, "Couldn't save the widget — try again"), "error");
     } finally {
       setSaving(false);
     }

@@ -4,7 +4,7 @@ import { useApp } from "@/context/AppContext";
 import { useProject } from "@/hooks/useProjects";
 import { useDashboard, useReplaceDashboardTiles, useUpdateDashboard } from "@/hooks/useDashboards";
 import { useWidgets } from "@/hooks/useWidgets";
-import { ApiError } from "@/lib/api";
+import { getErrorMessage } from "@/lib/api";
 import { deriveLiveSource } from "@/lib/liveData";
 import type { DashboardTile, Widget } from "@/types";
 import { Button } from "@/components/ui/button";
@@ -135,7 +135,7 @@ export default function DashboardCanvasPage() {
       toast(nowPublished ? "Dashboard published" : "Dashboard unpublished", "success");
       setShowPublish(false);
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : "Couldn't update the dashboard", "error");
+      toast(getErrorMessage(err, "Couldn't update the dashboard"), "error");
     }
   };
 
@@ -144,7 +144,7 @@ export default function DashboardCanvasPage() {
       await updateDashboard.mutateAsync({ sharePassword: password });
       toast("Password set", "success");
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : "Couldn't set the password", "error");
+      toast(getErrorMessage(err, "Couldn't set the password"), "error");
     }
   };
 
@@ -153,7 +153,7 @@ export default function DashboardCanvasPage() {
       await updateDashboard.mutateAsync({ sharePassword: null });
       toast("Password removed", "success");
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : "Couldn't remove the password", "error");
+      toast(getErrorMessage(err, "Couldn't remove the password"), "error");
     }
   };
 

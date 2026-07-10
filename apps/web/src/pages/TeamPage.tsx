@@ -2,17 +2,13 @@ import * as React from "react";
 import { useApp } from "@/context/AppContext";
 import { useProjects } from "@/hooks/useProjects";
 import { useInviteMember, useRemoveMember, useTeam, useUpdateMemberRole } from "@/hooks/useTeam";
-import { ApiError } from "@/lib/api";
+import { getErrorMessage } from "@/lib/api";
 import type { ProjectRole } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { initials } from "@/lib/initials";
 import { timeAgo } from "@/lib/timeAgo";
-
-function errorMessage(err: unknown, fallback: string) {
-  return err instanceof ApiError ? err.message : fallback;
-}
 
 export default function TeamPage() {
   const { toast } = useApp();
@@ -44,7 +40,7 @@ export default function TeamPage() {
       setInviteEmail("");
       toast("Invitation sent to " + email, "success");
     } catch (err) {
-      toast(errorMessage(err, "Couldn't send the invitation"), "error");
+      toast(getErrorMessage(err, "Couldn't send the invitation"), "error");
     }
   };
 
@@ -53,7 +49,7 @@ export default function TeamPage() {
       await updateRole.mutateAsync({ id: userId, role });
       toast("Role updated", "success");
     } catch (err) {
-      toast(errorMessage(err, "Couldn't update the role"), "error");
+      toast(getErrorMessage(err, "Couldn't update the role"), "error");
     }
   };
 
@@ -62,7 +58,7 @@ export default function TeamPage() {
       await removeMember.mutateAsync(userId);
       toast("Member removed", "info");
     } catch (err) {
-      toast(errorMessage(err, "Couldn't remove that member"), "error");
+      toast(getErrorMessage(err, "Couldn't remove that member"), "error");
     }
   };
 
