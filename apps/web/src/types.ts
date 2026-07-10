@@ -84,6 +84,7 @@ export interface DashboardTile {
   // viewers can't otherwise resolve via the authenticated widgets list.
   name?: string;
   type?: WidgetType;
+  resource?: string;
 }
 
 export interface Dashboard {

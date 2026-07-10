@@ -5,6 +5,7 @@ import { useProject } from "@/hooks/useProjects";
 import { useDashboard, useReplaceDashboardTiles, useUpdateDashboard } from "@/hooks/useDashboards";
 import { useWidgets } from "@/hooks/useWidgets";
 import { ApiError } from "@/lib/api";
+import { deriveLiveSource } from "@/lib/liveData";
 import type { DashboardTile, Widget } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -234,6 +235,7 @@ export default function DashboardCanvasPage() {
                   color={TYPE_COLOR[w.type] || "#8b5cf6"}
                   colSpan={tile.colSpan}
                   rowSpan={tile.rowSpan}
+                  liveSource={deriveLiveSource(widgetMap.get(tile.id)?.resource, w.type)}
                   onDragStart={() => setDragIndex(i)}
                   onDrop={() => handleDrop(i)}
                   onCycleSpan={() => cycleSpan(i)}

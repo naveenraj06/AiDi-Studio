@@ -2,6 +2,7 @@ import * as React from "react";
 import { useParams } from "react-router-dom";
 import { usePublicDashboard } from "@/hooks/usePublicDashboard";
 import { ApiError } from "@/lib/api";
+import { deriveLiveSource } from "@/lib/liveData";
 import { TYPE_COLOR } from "@/components/widgets/widgetTypeMeta";
 import { WidgetRenderer } from "@/components/widgets/WidgetRenderer";
 
@@ -82,6 +83,7 @@ export default function PublicDashboardPage() {
     type: tile.type ?? "table",
     colSpan: tile.colSpan,
     color: TYPE_COLOR[tile.type ?? "table"] || "#8b5cf6",
+    liveSource: deriveLiveSource(tile.resource, tile.type ?? "table"),
   }));
 
   return (
@@ -115,7 +117,7 @@ export default function PublicDashboardPage() {
               >
                 <div className="mb-2.5 text-[12px] font-semibold text-ink-1">{tile.name}</div>
                 <div className="min-h-0 flex-1">
-                  <WidgetRenderer type={tile.type} color={tile.color} showLegend showPoints />
+                  <WidgetRenderer type={tile.type} color={tile.color} showLegend showPoints liveSource={tile.liveSource} />
                 </div>
               </div>
             ))}

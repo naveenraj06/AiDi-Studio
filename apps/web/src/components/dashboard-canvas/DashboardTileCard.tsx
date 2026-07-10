@@ -1,4 +1,5 @@
 import type { WidgetType } from "@/types";
+import type { LiveSource } from "@/lib/liveData";
 import { WidgetRenderer } from "@/components/widgets/WidgetRenderer";
 
 interface DashboardTileCardProps {
@@ -7,6 +8,7 @@ interface DashboardTileCardProps {
   color: string;
   colSpan: number;
   rowSpan: number;
+  liveSource?: LiveSource;
   onDragStart: () => void;
   onDrop: () => void;
   onCycleSpan: () => void;
@@ -20,6 +22,7 @@ export function DashboardTileCard({
   color,
   colSpan,
   rowSpan,
+  liveSource,
   onDragStart,
   onDrop,
   onCycleSpan,
@@ -64,7 +67,7 @@ export function DashboardTileCard({
         </div>
       </div>
       <div className="min-h-0 flex-1">
-        <WidgetRenderer type={type} color={color} showLegend showPoints />
+        <WidgetRenderer type={type} color={color} showLegend showPoints liveSource={liveSource} />
       </div>
     </div>
   );

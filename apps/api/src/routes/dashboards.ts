@@ -10,7 +10,7 @@ const DASHBOARD_SELECT = "*, dashboard_tiles(widget_id, position, col_span, row_
 // Anonymous public viewers can't call the authenticated /widgets endpoint to
 // resolve tile names/types, so the public route embeds them directly.
 const PUBLIC_DASHBOARD_SELECT =
-  "*, dashboard_tiles(widget_id, position, col_span, row_span, widget:widgets(name, type))";
+  "*, dashboard_tiles(widget_id, position, col_span, row_span, widget:widgets(name, type, resource:api_resources(name)))";
 
 const createSchema = z.object({
   name: z.string().trim().min(1, "Enter a dashboard name"),

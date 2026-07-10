@@ -89,7 +89,7 @@ export interface DashboardTileRow {
   position: number;
   col_span: number;
   row_span: number;
-  widget?: { name: string; type: string } | null;
+  widget?: { name: string; type: string; resource?: { name: string } | null } | null;
 }
 
 export interface DashboardRow {
@@ -116,7 +116,9 @@ export function serializeDashboard(d: DashboardRow) {
       id: t.widget_id,
       colSpan: t.col_span,
       rowSpan: t.row_span,
-      ...(t.widget ? { name: t.widget.name, type: t.widget.type } : {}),
+      ...(t.widget
+        ? { name: t.widget.name, type: t.widget.type, resource: t.widget.resource?.name }
+        : {}),
     })),
   };
 }
