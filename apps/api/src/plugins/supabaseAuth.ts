@@ -20,7 +20,16 @@ declare module "fastify" {
   }
 }
 
+const AUTH_CACHE_TTL_MS = 60_000;
+const authCache = new Map<string, { user: SupabaseUser; expiresAt: number }>();
+
 async function fetchSupabaseUser(token: string): Promise<SupabaseUser | null> {
+  const cached = authCache.get(token);
+  if (cached) {
+    if (cached.expiresAt > Date.now()) return cached.user;
+    authCache.delete(token);
+  }
+
   let res: Response;
   try {
     res = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
@@ -37,11 +46,13 @@ async function fetchSupabaseUser(token: string): Promise<SupabaseUser | null> {
     user_metadata?: { name?: string; full_name?: string };
   };
   const email = data.email ?? "";
-  return {
+  const user: SupabaseUser = {
     id: data.id,
     email,
     name: data.user_metadata?.name ?? data.user_metadata?.full_name ?? email.split("@")[0] ?? "User",
   };
+  authCache.set(token, { user, expiresAt: Date.now() + AUTH_CACHE_TTL_MS });
+  return user;
 }
 
 export default fp(async function supabaseAuthPlugin(app: FastifyInstance) {

@@ -142,8 +142,8 @@ export default function LandingPage() {
           className="rounded-2xl border border-border-default bg-bg-1 p-2.5"
           style={{ boxShadow: "0 30px 80px rgba(0,0,0,0.5)" }}
         >
-          <div className="grid grid-cols-4 gap-3.5 rounded-[10px] bg-surface-sunken p-6">
-            <div className="col-span-2 h-[150px] rounded-[10px] border border-border-strong bg-bg-2 p-4">
+          <div className="grid grid-cols-4 gap-3.5 rounded-lg bg-surface-sunken p-6">
+            <div className="col-span-2 h-[150px] rounded-lg border border-border-strong bg-bg-2 p-4">
               <div className="mb-2.5 text-[11px] text-ink-3">MONTHLY REVENUE</div>
               <svg width="100%" height="90" viewBox="0 0 300 90" preserveAspectRatio="none">
                 <polyline
@@ -154,14 +154,14 @@ export default function LandingPage() {
                 />
               </svg>
             </div>
-            <div className="rounded-[10px] border border-border-strong bg-bg-2 p-4">
+            <div className="rounded-lg border border-border-strong bg-bg-2 p-4">
               <div className="text-[11px] text-ink-3">ACTIVE USERS</div>
               <div className="font-display mt-2.5 text-[30px] font-bold">18.2k</div>
               <div className="mt-1 text-[11px] text-brand-green">▲ 12.4%</div>
             </div>
-            <div className="flex items-center justify-center rounded-[10px] border border-border-strong bg-bg-2 p-4">
+            <div className="flex items-center justify-center rounded-lg border border-border-strong bg-bg-2 p-4">
               <svg width="80" height="80" viewBox="0 0 42 42">
-                <circle r="15.9" cx="21" cy="21" fill="transparent" stroke="#232330" strokeWidth={6} />
+                <circle r="15.9" cx="21" cy="21" fill="transparent" stroke="var(--color-border-strong)" strokeWidth={6} />
                 <circle
                   r="15.9"
                   cx="21"
@@ -184,7 +184,7 @@ export default function LandingPage() {
                 />
               </svg>
             </div>
-            <div className="col-span-4 flex gap-6 rounded-[10px] border border-border-strong bg-bg-2 px-4 py-3.5">
+            <div className="col-span-4 flex gap-6 rounded-lg border border-border-strong bg-bg-2 px-4 py-3.5">
               <div className="text-[12px] text-ink-3">Region</div>
               <div className="text-[12px] text-ink-3">Signups</div>
               <div className="text-[12px] text-ink-3">Revenue</div>
@@ -222,7 +222,7 @@ export default function LandingPage() {
           {FEATURES.map((f) => (
             <div key={f.title} className="rounded-xl border border-border-default bg-bg-1 p-5">
               <div
-                className="mb-3.5 flex h-9 w-9 items-center justify-center rounded-[9px] text-[16px]"
+                className="mb-3.5 flex h-9 w-9 items-center justify-center rounded-md text-[16px]"
                 style={{ background: "rgba(139,92,246,0.12)", border: "1px solid rgba(139,92,246,0.3)" }}
               >
                 {f.icon}
@@ -247,7 +247,7 @@ export default function LandingPage() {
               key={pl.name}
               className="rounded-xl border p-[18px]"
               style={{
-                background: i === 1 ? "#151022" : "var(--color-bg-1)",
+                background: i === 1 ? "var(--color-surface-selected)" : "var(--color-bg-1)",
                 borderColor: i === 1 ? "var(--color-brand-violet)" : "var(--color-border-default)",
               }}
             >

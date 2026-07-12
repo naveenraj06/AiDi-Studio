@@ -34,7 +34,7 @@ export function ConfirmDialog({
           <Button
             onClick={onConfirm}
             disabled={confirming}
-            style={{ background: "#3a1518", color: "var(--color-brand-red)" }}
+            className="bg-brand-red-surface text-brand-red hover:bg-brand-red-surface hover:brightness-110"
           >
             {confirming ? pendingLabel : confirmLabel}
           </Button>

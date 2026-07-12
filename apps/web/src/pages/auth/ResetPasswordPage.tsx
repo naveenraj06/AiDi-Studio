@@ -1,12 +1,12 @@
 import * as React from "react";
 import { Link } from "react-router-dom";
-import { useApp } from "@/context/AppContext";
+import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import AuthLayout from "./AuthLayout";
 import { FormField } from "./FormField";
 
 export default function ResetPasswordPage() {
-  const { resetPassword, isPasswordRecovery } = useApp();
+  const { resetPassword, isPasswordRecovery } = useAuth();
   const [password, setPassword] = React.useState("");
   const [confirmPassword, setConfirmPassword] = React.useState("");
   const [errors, setErrors] = React.useState<Record<string, string>>({});

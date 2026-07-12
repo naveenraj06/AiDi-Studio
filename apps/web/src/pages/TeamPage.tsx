@@ -1,8 +1,13 @@
 import * as React from "react";
-import { useApp } from "@/context/AppContext";
-import { useProjects } from "@/hooks/useProjects";
-import { useInviteMember, useRemoveMember, useTeam, useUpdateMemberRole } from "@/hooks/useTeam";
-import { getErrorMessage } from "@/lib/api";
+import { useAuth } from "@/hooks/useAuth";
+import { useGetProjectsQuery } from "@/store/api/projectsApi";
+import {
+  useGetTeamQuery,
+  useInviteMemberMutation,
+  useRemoveMemberMutation,
+  useUpdateMemberRoleMutation,
+} from "@/store/api/teamApi";
+import { getErrorMessage } from "@/lib/errors";
 import type { ProjectRole } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,8 +16,8 @@ import { initials } from "@/lib/initials";
 import { timeAgo } from "@/lib/timeAgo";
 
 export default function TeamPage() {
-  const { toast } = useApp();
-  const { data: projects } = useProjects();
+  const { toast } = useAuth();
+  const { data: projects } = useGetProjectsQuery();
 
   const [projectId, setProjectId] = React.useState("");
   const [inviteEmail, setInviteEmail] = React.useState("");
@@ -20,10 +25,14 @@ export default function TeamPage() {
 
   const activeProjectId = projectId || projects?.[0]?.id || "";
 
-  const { data: members, isLoading, isError } = useTeam(activeProjectId || undefined);
-  const inviteMember = useInviteMember(activeProjectId);
-  const updateRole = useUpdateMemberRole(activeProjectId);
-  const removeMember = useRemoveMember(activeProjectId);
+  const {
+    data: members,
+    isLoading,
+    isError,
+  } = useGetTeamQuery(activeProjectId, { skip: !activeProjectId });
+  const [inviteMember, { isLoading: inviting }] = useInviteMemberMutation();
+  const [updateRole] = useUpdateMemberRoleMutation();
+  const [removeMember] = useRemoveMemberMutation();
 
   const onInvite = async () => {
     const email = inviteEmail.trim();
@@ -36,7 +45,10 @@ export default function TeamPage() {
       .replace(/[._]/g, " ")
       .replace(/\b\w/g, (c) => c.toUpperCase());
     try {
-      await inviteMember.mutateAsync({ name, email, role: inviteRole === "owner" ? "editor" : inviteRole });
+      await inviteMember({
+        projectId: activeProjectId,
+        input: { name, email, role: inviteRole === "owner" ? "editor" : inviteRole },
+      }).unwrap();
       setInviteEmail("");
       toast("Invitation sent to " + email, "success");
     } catch (err) {
@@ -46,7 +58,7 @@ export default function TeamPage() {
 
   const onRoleChange = async (userId: string, role: ProjectRole) => {
     try {
-      await updateRole.mutateAsync({ id: userId, role });
+      await updateRole({ projectId: activeProjectId, id: userId, role }).unwrap();
       toast("Role updated", "success");
     } catch (err) {
       toast(getErrorMessage(err, "Couldn't update the role"), "error");
@@ -55,7 +67,7 @@ export default function TeamPage() {
 
   const onRemove = async (userId: string) => {
     try {
-      await removeMember.mutateAsync(userId);
+      await removeMember({ projectId: activeProjectId, id: userId }).unwrap();
       toast("Member removed", "info");
     } catch (err) {
       toast(getErrorMessage(err, "Couldn't remove that member"), "error");
@@ -178,8 +190,8 @@ export default function TeamPage() {
             <SelectItem value="viewer">Viewer</SelectItem>
           </SelectContent>
         </Select>
-        <Button onClick={onInvite} disabled={inviteMember.isPending} className="whitespace-nowrap">
-          {inviteMember.isPending ? "Inviting…" : "Invite"}
+        <Button onClick={onInvite} disabled={inviting} className="whitespace-nowrap">
+          {inviting ? "Inviting…" : "Invite"}
         </Button>
       </div>
     </div>

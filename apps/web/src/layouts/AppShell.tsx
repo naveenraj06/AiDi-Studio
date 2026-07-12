@@ -1,6 +1,9 @@
 import { Outlet, useNavigate, useParams } from "react-router-dom";
-import { useApp } from "@/context/AppContext";
-import { useProjects } from "@/hooks/useProjects";
+import { useAuth } from "@/hooks/useAuth";
+import { useGetProjectsQuery } from "@/store/api/projectsApi";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
+import { initials } from "@/lib/initials";
 
 interface NavItem {
   key: string;
@@ -11,8 +14,8 @@ interface NavItem {
 
 export default function AppShell() {
   const { projectId } = useParams<{ projectId?: string }>();
-  const { session, logout } = useApp();
-  const { data: projects } = useProjects();
+  const { session, logout } = useAuth();
+  const { data: projects } = useGetProjectsQuery();
   const navigate = useNavigate();
 
   const currentProject = projectId ? projects?.find((p) => p.id === projectId) : null;
@@ -48,13 +51,7 @@ export default function AppShell() {
     return "";
   })();
 
-  const userInitials = session?.user.display_name
-    ? session.user.display_name
-        .split(" ")
-        .map((w) => w[0])
-        .join("")
-        .slice(0, 2)
-    : "";
+  const userInitials = session?.user.display_name ? initials(session.user.display_name) : "";
 
   return (
     <div className="flex min-h-screen">
@@ -72,7 +69,7 @@ export default function AppShell() {
 
         {currentProject && (
           <div
-            className="mx-4 mb-3.5 mt-1 flex cursor-pointer items-center gap-2.5 rounded-[10px] border border-border-strong bg-bg-2 px-3 py-2.5"
+            className="mx-4 mb-3.5 mt-1 flex cursor-pointer items-center gap-2.5 rounded-lg border border-border-strong bg-bg-2 px-3 py-2.5"
             onClick={() => navigate("/projects")}
           >
             <div
@@ -114,9 +111,9 @@ export default function AppShell() {
 
         <div className="border-t border-border-default p-3">
           <div className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 hover:bg-bg-2">
-            <div className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full bg-bg-3 text-[11px] font-bold text-brand-violet-light">
-              {userInitials}
-            </div>
+            <Avatar>
+              <AvatarFallback>{userInitials}</AvatarFallback>
+            </Avatar>
             <div className="min-w-0 flex-1">
               <div className="overflow-hidden text-ellipsis whitespace-nowrap text-[12px] font-semibold text-ink-1">
                 {session?.user.display_name}
@@ -125,6 +122,7 @@ export default function AppShell() {
                 {session?.user.email}
               </div>
             </div>
+            <ThemeToggle />
             <div
               onClick={logout}
               title="Log out"

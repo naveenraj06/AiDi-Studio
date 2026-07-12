@@ -1,9 +1,9 @@
 import * as React from "react";
-import { useApp } from "@/context/AppContext";
+import { useAuth } from "@/hooks/useAuth";
 import AuthLayout from "./AuthLayout";
 
 export default function VerifyEmailPage() {
-  const { pendingVerificationEmail, resendVerification } = useApp();
+  const { pendingVerificationEmail, resendVerification } = useAuth();
   const [resending, setResending] = React.useState(false);
 
   const handleResend = async () => {

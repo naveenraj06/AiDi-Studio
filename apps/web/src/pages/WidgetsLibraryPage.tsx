@@ -1,8 +1,8 @@
 import * as React from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { useApp } from "@/context/AppContext";
-import { useProject } from "@/hooks/useProjects";
-import { useDeleteWidget, useWidgets } from "@/hooks/useWidgets";
+import { useAuth } from "@/hooks/useAuth";
+import { useGetProjectQuery } from "@/store/api/projectsApi";
+import { useDeleteWidgetMutation, useGetWidgetsQuery } from "@/store/api/widgetsApi";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { TYPE_ICON } from "@/components/widgets/widgetTypeMeta";
@@ -10,10 +10,10 @@ import type { Widget } from "@/types";
 
 export default function WidgetsLibraryPage() {
   const { projectId } = useParams<{ projectId: string }>();
-  const { toast } = useApp();
-  const { data: project, isLoading: projectLoading } = useProject(projectId);
-  const { data: widgets, isLoading, isError } = useWidgets(projectId);
-  const deleteWidget = useDeleteWidget(projectId ?? "");
+  const { toast } = useAuth();
+  const { data: project, isLoading: projectLoading } = useGetProjectQuery(projectId ?? "", { skip: !projectId });
+  const { data: widgets, isLoading, isError } = useGetWidgetsQuery(projectId ?? "", { skip: !projectId });
+  const [deleteWidget, { isLoading: deleting }] = useDeleteWidgetMutation();
   const navigate = useNavigate();
 
   const [deleteTarget, setDeleteTarget] = React.useState<Widget | null>(null);
@@ -29,7 +29,7 @@ export default function WidgetsLibraryPage() {
   const handleDelete = async () => {
     if (!deleteTarget) return;
     try {
-      await deleteWidget.mutateAsync(deleteTarget.id);
+      await deleteWidget({ projectId: projectId ?? "", id: deleteTarget.id }).unwrap();
       toast("Widget deleted", "success");
       setDeleteTarget(null);
     } catch {
@@ -105,7 +105,7 @@ export default function WidgetsLibraryPage() {
               <div
                 key={w.id}
                 onClick={() => openWidget(w)}
-                className="group relative cursor-pointer rounded-xl border border-border-default bg-bg-1 p-4 transition-colors hover:border-[#2e2e3a]"
+                className="group relative cursor-pointer rounded-xl border border-border-default bg-bg-1 p-4 transition-colors hover:border-border-strong"
               >
                 <div
                   onClick={(e) => {
@@ -113,7 +113,7 @@ export default function WidgetsLibraryPage() {
                     setDeleteTarget(w);
                   }}
                   title="Delete widget"
-                  className="absolute right-2 top-2 cursor-pointer rounded-[5px] px-1.5 py-0.5 text-[12px] text-ink-3 opacity-0 transition-opacity hover:bg-[#2a1518] hover:text-brand-red group-hover:opacity-100"
+                  className="absolute right-2 top-2 cursor-pointer rounded-xs px-1.5 py-0.5 text-[12px] text-ink-3 opacity-0 transition-opacity hover:bg-brand-red-surface hover:text-brand-red group-hover:opacity-100"
                 >
                   ✕
                 </div>
@@ -153,7 +153,7 @@ export default function WidgetsLibraryPage() {
                         setDeleteTarget(w);
                       }}
                       title="Delete widget"
-                      className="absolute right-2 top-2 cursor-pointer rounded-[5px] px-1.5 py-0.5 text-[12px] text-ink-3 opacity-0 transition-opacity hover:bg-[#2a1518] hover:text-brand-red group-hover:opacity-100"
+                      className="absolute right-2 top-2 cursor-pointer rounded-xs px-1.5 py-0.5 text-[12px] text-ink-3 opacity-0 transition-opacity hover:bg-brand-red-surface hover:text-brand-red group-hover:opacity-100"
                     >
                       ✕
                     </div>
@@ -179,7 +179,7 @@ export default function WidgetsLibraryPage() {
         onOpenChange={(open) => !open && setDeleteTarget(null)}
         title="Delete widget?"
         description={`This removes "${deleteTarget?.name}" from every dashboard it's on and can't be undone.`}
-        confirming={deleteWidget.isPending}
+        confirming={deleting}
         onConfirm={handleDelete}
       />
     </div>

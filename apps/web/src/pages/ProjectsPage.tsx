@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useNavigate } from "react-router-dom";
-import { useApp } from "@/context/AppContext";
-import { useCreateProject, useDeleteProject, useProjects } from "@/hooks/useProjects";
+import { useAuth } from "@/hooks/useAuth";
+import { useCreateProjectMutation, useDeleteProjectMutation, useGetProjectsQuery } from "@/store/api/projectsApi";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -13,10 +13,10 @@ const ICONS = ["📊", "🚀", "🎧", "📈", "🔧", "💡", "🌐", "🧭"];
 const COLORS = ["#8b5cf6", "#22d3ee", "#34d399", "#fbbf24", "#f87171"];
 
 export default function ProjectsPage() {
-  const { toast } = useApp();
-  const { data: projects, isLoading, isError } = useProjects();
-  const createProject = useCreateProject();
-  const deleteProject = useDeleteProject();
+  const { toast } = useAuth();
+  const { data: projects, isLoading, isError } = useGetProjectsQuery();
+  const [createProject, { isLoading: creating }] = useCreateProjectMutation();
+  const [deleteProject, { isLoading: deleting }] = useDeleteProjectMutation();
   const navigate = useNavigate();
 
   const [open, setOpen] = React.useState(false);
@@ -37,7 +37,7 @@ export default function ProjectsPage() {
     const icon = ICONS[Math.floor(Math.random() * ICONS.length)];
     const color = COLORS[Math.floor(Math.random() * COLORS.length)];
     try {
-      const project = await createProject.mutateAsync({ name: trimmed, icon, color });
+      const project = await createProject({ name: trimmed, icon, color }).unwrap();
       setOpen(false);
       toast("Project created", "success");
       navigate(`/projects/${project.id}/dashboards`);
@@ -49,7 +49,7 @@ export default function ProjectsPage() {
   const handleDelete = async () => {
     if (!deleteTarget) return;
     try {
-      await deleteProject.mutateAsync(deleteTarget.id);
+      await deleteProject(deleteTarget.id).unwrap();
       toast("Project deleted", "success");
       setDeleteTarget(null);
     } catch {
@@ -102,7 +102,7 @@ export default function ProjectsPage() {
             <div
               key={p.id}
               onClick={() => navigate(`/projects/${p.id}/dashboards`)}
-              className="group relative flex cursor-pointer flex-col gap-3.5 rounded-xl border border-border-default bg-bg-1 p-5 transition-colors hover:border-[#2e2e3a] hover:bg-[#131318]"
+              className="group relative flex cursor-pointer flex-col gap-3.5 rounded-xl border border-border-default bg-bg-1 p-5 transition-colors hover:border-border-strong hover:bg-bg-2"
             >
               <div
                 onClick={(e) => {
@@ -110,13 +110,13 @@ export default function ProjectsPage() {
                   setDeleteTarget(p);
                 }}
                 title="Delete project"
-                className="absolute right-3 top-3 cursor-pointer rounded-[5px] px-1.5 py-0.5 text-[12px] text-ink-3 opacity-0 transition-opacity hover:bg-[#2a1518] hover:text-brand-red group-hover:opacity-100"
+                className="absolute right-3 top-3 cursor-pointer rounded-xs px-1.5 py-0.5 text-[12px] text-ink-3 opacity-0 transition-opacity hover:bg-brand-red-surface hover:text-brand-red group-hover:opacity-100"
               >
                 ✕
               </div>
               <div className="flex items-center gap-3">
                 <div
-                  className="flex h-[38px] w-[38px] items-center justify-center rounded-[9px] text-[17px]"
+                  className="flex h-[38px] w-[38px] items-center justify-center rounded-md text-[17px]"
                   style={{ background: `${p.color}22`, border: `1px solid ${p.color}55` }}
                 >
                   {p.icon}
@@ -160,8 +160,8 @@ export default function ProjectsPage() {
             <Button variant="ghost" size="sm" onClick={() => setOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleCreate} disabled={createProject.isPending}>
-              {createProject.isPending ? "Creating…" : "Create project"}
+            <Button onClick={handleCreate} disabled={creating}>
+              {creating ? "Creating…" : "Create project"}
             </Button>
           </div>
         </DialogContent>
@@ -172,7 +172,7 @@ export default function ProjectsPage() {
         onOpenChange={(open) => !open && setDeleteTarget(null)}
         title="Delete project?"
         description={`This permanently deletes "${deleteTarget?.name}" along with all of its dashboards, widgets, API resources, and team access. This can't be undone.`}
-        confirming={deleteProject.isPending}
+        confirming={deleting}
         onConfirm={handleDelete}
       />
     </div>

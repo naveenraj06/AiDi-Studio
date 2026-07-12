@@ -127,7 +127,9 @@ export function PublishDialog({
             variant={isPublished ? "outline" : "primary"}
             onClick={onTogglePublishState}
             disabled={publishing}
-            style={isPublished ? { background: "#2a1518", color: "var(--color-brand-red)", borderColor: "#2a1518" } : undefined}
+            className={
+              isPublished ? "border-brand-red-surface bg-brand-red-surface text-brand-red hover:border-brand-red-surface" : undefined
+            }
           >
             {publishing ? "Working…" : isPublished ? "Unpublish" : "Publish now"}
           </Button>

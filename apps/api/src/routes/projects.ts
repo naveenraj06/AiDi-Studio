@@ -1,8 +1,9 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { getProjectRole, roleAtLeast } from "../lib/authz.js";
+import { requireRole } from "../lib/authz.js";
 import { serializeProject, type ProjectRow } from "../lib/serialize.js";
 import { supabase } from "../lib/supabase.js";
+import { parseBody } from "../lib/validate.js";
 
 const PROJECT_SELECT = "*, dashboards:dashboards(count), widgets:widgets(count), resources:api_resources(count)";
 
@@ -40,14 +41,14 @@ export default async function projectRoutes(app: FastifyInstance) {
   });
 
   app.post("/projects", async (request, reply) => {
-    const parsed = createSchema.safeParse(request.body);
-    if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+    const data = parseBody(createSchema, request, reply);
+    if (!data) return;
 
     const { data: created, error: rpcError } = await supabase
       .rpc("create_project", {
-        p_name: parsed.data.name,
-        p_icon: parsed.data.icon,
-        p_color: parsed.data.color,
+        p_name: data.name,
+        p_icon: data.icon,
+        p_color: data.color,
         p_owner_id: request.userId,
         p_owner_name: request.userName,
         p_owner_email: request.userEmail,
@@ -64,10 +65,8 @@ export default async function projectRoutes(app: FastifyInstance) {
     return reply.code(201).send({ project: serializeProject(project) });
   });
 
-  app.get("/projects/:id", async (request, reply) => {
+  app.get("/projects/:id", { preHandler: [requireRole("viewer")] }, async (request, reply) => {
     const { id } = request.params as { id: string };
-    const role = await getProjectRole(request.userId, id);
-    if (!roleAtLeast(role, "viewer")) return reply.code(404).send({ error: "Project not found" });
 
     const { data: project, error } = await supabase
       .from("projects")
@@ -78,17 +77,15 @@ export default async function projectRoutes(app: FastifyInstance) {
     return reply.send({ project: serializeProject(project) });
   });
 
-  app.patch("/projects/:id", async (request, reply) => {
+  app.patch("/projects/:id", { preHandler: [requireRole("editor")] }, async (request, reply) => {
     const { id } = request.params as { id: string };
-    const role = await getProjectRole(request.userId, id);
-    if (!roleAtLeast(role, "editor")) return reply.code(404).send({ error: "Project not found" });
 
-    const parsed = updateSchema.safeParse(request.body);
-    if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+    const data = parseBody(updateSchema, request, reply);
+    if (!data) return;
 
     const { data: project, error } = await supabase
       .from("projects")
-      .update({ ...parsed.data, updated_at: new Date().toISOString() })
+      .update({ ...data, updated_at: new Date().toISOString() })
       .eq("id", id)
       .select(PROJECT_SELECT)
       .single<ProjectRow>();
@@ -96,10 +93,8 @@ export default async function projectRoutes(app: FastifyInstance) {
     return reply.send({ project: serializeProject(project) });
   });
 
-  app.delete("/projects/:id", async (request, reply) => {
+  app.delete("/projects/:id", { preHandler: [requireRole("owner")] }, async (request, reply) => {
     const { id } = request.params as { id: string };
-    const role = await getProjectRole(request.userId, id);
-    if (!roleAtLeast(role, "owner")) return reply.code(404).send({ error: "Project not found" });
 
     const { error } = await supabase.from("projects").delete().eq("id", id);
     if (error) return reply.code(500).send({ error: "Failed to delete project" });

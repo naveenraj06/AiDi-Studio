@@ -1,8 +1,9 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { getProjectRole, roleAtLeast } from "../lib/authz.js";
+import { requireRole } from "../lib/authz.js";
 import { serializeWidget, type WidgetRow } from "../lib/serialize.js";
 import { supabase } from "../lib/supabase.js";
+import { parseBody } from "../lib/validate.js";
 
 const WIDGET_SELECT = "*, resource:api_resources(id, name)";
 
@@ -40,81 +41,89 @@ function toRow(input: Partial<z.infer<typeof createSchema>>) {
 export default async function widgetRoutes(app: FastifyInstance) {
   app.addHook("preHandler", app.authenticate);
 
-  app.get("/projects/:projectId/widgets", async (request, reply) => {
-    const { projectId } = request.params as { projectId: string };
-    const role = await getProjectRole(request.userId, projectId);
-    if (!roleAtLeast(role, "viewer")) return reply.code(404).send({ error: "Project not found" });
+  app.get(
+    "/projects/:projectId/widgets",
+    { preHandler: [requireRole("viewer", "projectId")] },
+    async (request, reply) => {
+      const { projectId } = request.params as { projectId: string };
 
-    const { data, error } = await supabase
-      .from("widgets")
-      .select(WIDGET_SELECT)
-      .eq("project_id", projectId)
-      .order("updated_at", { ascending: false })
-      .returns<WidgetRow[]>();
-    if (error) return reply.code(500).send({ error: "Failed to load widgets" });
-    return reply.send({ widgets: (data ?? []).map(serializeWidget) });
-  });
-
-  app.post("/projects/:projectId/widgets", async (request, reply) => {
-    const { projectId } = request.params as { projectId: string };
-    const role = await getProjectRole(request.userId, projectId);
-    if (!roleAtLeast(role, "editor")) return reply.code(404).send({ error: "Project not found" });
-
-    const parsed = createSchema.safeParse(request.body);
-    if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
-
-    if (parsed.data.resourceId) {
-      const { data: resource } = await supabase
-        .from("api_resources")
-        .select("id")
-        .eq("id", parsed.data.resourceId)
+      const { data, error } = await supabase
+        .from("widgets")
+        .select(WIDGET_SELECT)
         .eq("project_id", projectId)
-        .maybeSingle();
-      if (!resource) return reply.code(400).send({ error: "Resource not found in this project" });
-    }
+        .order("updated_at", { ascending: false })
+        .returns<WidgetRow[]>();
+      if (error) return reply.code(500).send({ error: "Failed to load widgets" });
+      return reply.send({ widgets: (data ?? []).map(serializeWidget) });
+    },
+  );
 
-    const { data: widget, error } = await supabase
-      .from("widgets")
-      .insert({ ...toRow(parsed.data), project_id: projectId })
-      .select(WIDGET_SELECT)
-      .single<WidgetRow>();
-    if (error || !widget) return reply.code(500).send({ error: "Failed to create widget" });
-    return reply.code(201).send({ widget: serializeWidget(widget) });
-  });
+  app.post(
+    "/projects/:projectId/widgets",
+    { preHandler: [requireRole("editor", "projectId")] },
+    async (request, reply) => {
+      const { projectId } = request.params as { projectId: string };
 
-  app.patch("/projects/:projectId/widgets/:id", async (request, reply) => {
-    const { projectId, id } = request.params as { projectId: string; id: string };
-    const role = await getProjectRole(request.userId, projectId);
-    if (!roleAtLeast(role, "editor")) return reply.code(404).send({ error: "Project not found" });
+      const data = parseBody(createSchema, request, reply);
+      if (!data) return;
 
-    const parsed = updateSchema.safeParse(request.body);
-    if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+      if (data.resourceId) {
+        const { data: resource } = await supabase
+          .from("api_resources")
+          .select("id")
+          .eq("id", data.resourceId)
+          .eq("project_id", projectId)
+          .maybeSingle();
+        if (!resource) return reply.code(400).send({ error: "Resource not found in this project" });
+      }
 
-    const { data: widget, error } = await supabase
-      .from("widgets")
-      .update({ ...toRow(parsed.data), updated_at: new Date().toISOString() })
-      .eq("id", id)
-      .eq("project_id", projectId)
-      .select(WIDGET_SELECT)
-      .maybeSingle<WidgetRow>();
-    if (error) return reply.code(500).send({ error: "Failed to update widget" });
-    if (!widget) return reply.code(404).send({ error: "Widget not found" });
-    return reply.send({ widget: serializeWidget(widget) });
-  });
+      const { data: widget, error } = await supabase
+        .from("widgets")
+        .insert({ ...toRow(data), project_id: projectId })
+        .select(WIDGET_SELECT)
+        .single<WidgetRow>();
+      if (error || !widget) return reply.code(500).send({ error: "Failed to create widget" });
+      return reply.code(201).send({ widget: serializeWidget(widget) });
+    },
+  );
 
-  app.delete("/projects/:projectId/widgets/:id", async (request, reply) => {
-    const { projectId, id } = request.params as { projectId: string; id: string };
-    const role = await getProjectRole(request.userId, projectId);
-    if (!roleAtLeast(role, "editor")) return reply.code(404).send({ error: "Project not found" });
+  app.patch(
+    "/projects/:projectId/widgets/:id",
+    { preHandler: [requireRole("editor", "projectId")] },
+    async (request, reply) => {
+      const { projectId, id } = request.params as { projectId: string; id: string };
 
-    const { data, error } = await supabase
-      .from("widgets")
-      .delete()
-      .eq("id", id)
-      .eq("project_id", projectId)
-      .select("id");
-    if (error) return reply.code(500).send({ error: "Failed to delete widget" });
-    if (!data || data.length === 0) return reply.code(404).send({ error: "Widget not found" });
-    return reply.code(204).send();
-  });
+      const data = parseBody(updateSchema, request, reply);
+      if (!data) return;
+
+      const { data: widget, error } = await supabase
+        .from("widgets")
+        .update({ ...toRow(data), updated_at: new Date().toISOString() })
+        .eq("id", id)
+        .eq("project_id", projectId)
+        .select(WIDGET_SELECT)
+        .maybeSingle<WidgetRow>();
+      if (error) return reply.code(500).send({ error: "Failed to update widget" });
+      if (!widget) return reply.code(404).send({ error: "Widget not found" });
+      return reply.send({ widget: serializeWidget(widget) });
+    },
+  );
+
+  app.delete(
+    "/projects/:projectId/widgets/:id",
+    { preHandler: [requireRole("editor", "projectId")] },
+    async (request, reply) => {
+      const { projectId, id } = request.params as { projectId: string; id: string };
+
+      const { data, error } = await supabase
+        .from("widgets")
+        .delete()
+        .eq("id", id)
+        .eq("project_id", projectId)
+        .select("id");
+      if (error) return reply.code(500).send({ error: "Failed to delete widget" });
+      if (!data || data.length === 0) return reply.code(404).send({ error: "Widget not found" });
+      return reply.code(204).send();
+    },
+  );
 }

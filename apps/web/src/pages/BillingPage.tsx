@@ -1,8 +1,8 @@
 import * as React from "react";
-import { useApp } from "@/context/AppContext";
-import { useProjects } from "@/hooks/useProjects";
-import { useBilling, useUpdateBilling } from "@/hooks/useBilling";
-import { getErrorMessage } from "@/lib/api";
+import { useAuth } from "@/hooks/useAuth";
+import { useGetProjectsQuery } from "@/store/api/projectsApi";
+import { useGetBillingQuery, useUpdateBillingMutation } from "@/store/api/billingApi";
+import { getErrorMessage } from "@/lib/errors";
 import type { Plan } from "@/types";
 import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -16,17 +16,17 @@ const PLAN_DEFS: { key: Plan; name: string; price: string; limits: string }[] = 
 const RANK: Record<Plan, number> = { free: 0, pro: 1, team: 2, enterprise: 3 };
 
 export default function BillingPage() {
-  const { toast } = useApp();
-  const { data: projects } = useProjects();
+  const { toast } = useAuth();
+  const { data: projects } = useGetProjectsQuery();
   const [projectId, setProjectId] = React.useState("");
 
   const activeProjectId = projectId || projects?.[0]?.id || "";
-  const { data: billing, isLoading, isError } = useBilling(activeProjectId || undefined);
-  const updateBilling = useUpdateBilling(activeProjectId);
+  const { data: billing, isLoading, isError } = useGetBillingQuery(activeProjectId, { skip: !activeProjectId });
+  const [updateBilling, { isLoading: updatingBilling }] = useUpdateBillingMutation();
 
   const onSelectPlan = async (planKey: Plan) => {
     try {
-      await updateBilling.mutateAsync({ plan: planKey });
+      await updateBilling({ projectId: activeProjectId, input: { plan: planKey } }).unwrap();
       toast(`Switched to ${planKey[0].toUpperCase() + planKey.slice(1)} plan`, "success");
     } catch (err) {
       toast(getErrorMessage(err, "Couldn't change plans"), "error");
@@ -91,7 +91,7 @@ export default function BillingPage() {
                   key={pl.key}
                   className="relative rounded-xl border p-[18px]"
                   style={{
-                    background: isCurrent ? "#151022" : "var(--color-bg-1)",
+                    background: isCurrent ? "var(--color-surface-selected)" : "var(--color-bg-1)",
                     borderColor: isCurrent ? "var(--color-brand-violet)" : "var(--color-border-default)",
                   }}
                 >
@@ -105,9 +105,9 @@ export default function BillingPage() {
                   <div className="mb-3.5 text-[11px] leading-[1.6] text-ink-2">{pl.limits}</div>
                   {!isCurrent && (
                     <div
-                      onClick={updateBilling.isPending ? undefined : () => onSelectPlan(pl.key)}
-                      className="cursor-pointer rounded-[7px] border border-border-strong bg-bg-2 p-2 text-center text-[12px] font-semibold text-ink-1 hover:bg-bg-3"
-                      style={updateBilling.isPending ? { opacity: 0.6, pointerEvents: "none" } : undefined}
+                      onClick={updatingBilling ? undefined : () => onSelectPlan(pl.key)}
+                      className="cursor-pointer rounded-sm border border-border-strong bg-bg-2 p-2 text-center text-[12px] font-semibold text-ink-1 hover:bg-bg-3"
+                      style={updatingBilling ? { opacity: 0.6, pointerEvents: "none" } : undefined}
                     >
                       {RANK[pl.key] > RANK[billing.plan] ? "Upgrade" : "Downgrade"}
                     </div>
@@ -122,7 +122,7 @@ export default function BillingPage() {
             {billing.card ? (
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="flex h-7 w-[42px] items-center justify-center rounded-[5px] bg-bg-3 text-[10px] font-bold">
+                  <div className="flex h-7 w-[42px] items-center justify-center rounded-xs bg-bg-3 text-[10px] font-bold">
                     {billing.card.brand}
                   </div>
                   <div className="text-[13px] text-ink-1">

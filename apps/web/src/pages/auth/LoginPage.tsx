@@ -1,12 +1,12 @@
 import * as React from "react";
 import { Link } from "react-router-dom";
-import { useApp } from "@/context/AppContext";
+import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import AuthLayout from "./AuthLayout";
 import { FormField } from "./FormField";
 
 export default function LoginPage() {
-  const { login, loginWithOAuth } = useApp();
+  const { login, loginWithOAuth } = useAuth();
 
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
@@ -29,13 +29,13 @@ export default function LoginPage() {
       <div className="mb-[18px] flex flex-col gap-2">
         <button
           onClick={() => loginWithOAuth("google")}
-          className="flex items-center justify-center gap-2 rounded-[9px] border border-border-strong bg-bg-2 p-2.5 text-[13px] font-semibold text-ink-1 transition-colors hover:bg-bg-3"
+          className="flex items-center justify-center gap-2 rounded-md border border-border-strong bg-bg-2 p-2.5 text-[13px] font-semibold text-ink-1 transition-colors hover:bg-bg-3"
         >
           <span>G</span> Continue with Google
         </button>
         <button
           onClick={() => loginWithOAuth("github")}
-          className="flex items-center justify-center gap-2 rounded-[9px] border border-border-strong bg-bg-2 p-2.5 text-[13px] font-semibold text-ink-1 transition-colors hover:bg-bg-3"
+          className="flex items-center justify-center gap-2 rounded-md border border-border-strong bg-bg-2 p-2.5 text-[13px] font-semibold text-ink-1 transition-colors hover:bg-bg-3"
         >
           <span>⌥</span> Continue with GitHub
         </button>

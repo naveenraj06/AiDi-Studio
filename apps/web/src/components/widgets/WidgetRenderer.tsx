@@ -129,7 +129,7 @@ export function WidgetRenderer({
       {type === "donut" && (
         <div className="flex flex-1 items-center justify-center gap-5">
           <svg width="120" height="120" viewBox="0 0 42 42">
-            <circle r="15.9" cx="21" cy="21" fill="transparent" stroke="#232330" strokeWidth={7} />
+            <circle r="15.9" cx="21" cy="21" fill="transparent" stroke="var(--color-border-strong)" strokeWidth={7} />
             <circle
               r="15.9"
               cx="21"
@@ -188,7 +188,7 @@ export function WidgetRenderer({
           className="flex flex-1 items-center justify-center rounded-lg font-mono text-[11px] text-ink-3"
           style={{
             background:
-              "repeating-linear-gradient(45deg,#0d0d11,#0d0d11 10px,#131318 10px,#131318 20px)",
+              "repeating-linear-gradient(45deg,var(--color-surface-sunken),var(--color-surface-sunken) 10px,var(--color-bg-2) 10px,var(--color-bg-2) 20px)",
           }}
         >
           map data by region

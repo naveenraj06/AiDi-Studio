@@ -1,12 +1,12 @@
 import * as React from "react";
 import { Link } from "react-router-dom";
-import { useApp } from "@/context/AppContext";
+import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import AuthLayout from "./AuthLayout";
 import { FormField } from "./FormField";
 
 export default function SignupPage() {
-  const { signup } = useApp();
+  const { signup } = useAuth();
 
   const [name, setName] = React.useState("");
   const [email, setEmail] = React.useState("");

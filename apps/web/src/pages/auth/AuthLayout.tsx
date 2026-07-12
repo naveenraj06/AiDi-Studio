@@ -11,11 +11,11 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
           className="mb-[30px] flex cursor-pointer items-center justify-center gap-2.5"
           onClick={() => navigate("/landing")}
         >
-          <div className="h-[26px] w-[26px] rounded-[7px]" style={{ background: "linear-gradient(135deg, #8b5cf6, #22d3ee)" }} />
+          <div className="h-[26px] w-[26px] rounded-sm" style={{ background: "linear-gradient(135deg, #8b5cf6, #22d3ee)" }} />
           <div className="font-display text-[15px] font-bold">AiDi Studio</div>
         </div>
 
-        <div className="rounded-[14px] border border-border-default bg-bg-1 p-[30px]">{children}</div>
+        <div className="rounded-xl border border-border-default bg-bg-1 p-[30px]">{children}</div>
       </div>
     </div>
   );

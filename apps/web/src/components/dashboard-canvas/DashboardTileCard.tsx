@@ -46,21 +46,21 @@ export function DashboardTileCard({
           <div
             onClick={onCycleSpan}
             title="Resize width"
-            className="cursor-pointer rounded-[5px] px-1.5 py-0.5 text-[11px] text-ink-3 hover:bg-bg-3 hover:text-ink-1"
+            className="cursor-pointer rounded-xs px-1.5 py-0.5 text-[11px] text-ink-3 hover:bg-bg-3 hover:text-ink-1"
           >
             ↔
           </div>
           <div
             onClick={onCycleRow}
             title="Resize height"
-            className="cursor-pointer rounded-[5px] px-1.5 py-0.5 text-[11px] text-ink-3 hover:bg-bg-3 hover:text-ink-1"
+            className="cursor-pointer rounded-xs px-1.5 py-0.5 text-[11px] text-ink-3 hover:bg-bg-3 hover:text-ink-1"
           >
             ↕
           </div>
           <div
             onClick={onRemove}
             title="Remove"
-            className="cursor-pointer rounded-[5px] px-1.5 py-0.5 text-[12px] text-ink-3 hover:bg-[#2a1518] hover:text-brand-red"
+            className="cursor-pointer rounded-xs px-1.5 py-0.5 text-[12px] text-ink-3 hover:bg-brand-red-surface hover:text-brand-red"
           >
             ✕
           </div>

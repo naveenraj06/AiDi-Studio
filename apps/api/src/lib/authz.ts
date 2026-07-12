@@ -1,3 +1,4 @@
+import type { FastifyReply, FastifyRequest } from "fastify";
 import { supabase } from "./supabase.js";
 
 export type ProjectRole = "owner" | "editor" | "viewer";
@@ -21,4 +22,12 @@ const RANK: Record<ProjectRole, number> = { viewer: 0, editor: 1, owner: 2 };
 export function roleAtLeast(role: ProjectRole | null, min: ProjectRole): boolean {
   if (!role) return false;
   return RANK[role] >= RANK[min];
+}
+
+export function requireRole(minRole: ProjectRole, paramName = "id") {
+  return async function requireRolePreHandler(request: FastifyRequest, reply: FastifyReply) {
+    const projectId = (request.params as Record<string, string>)[paramName];
+    const role = await getProjectRole(request.userId, projectId);
+    if (!roleAtLeast(role, minRole)) return reply.code(404).send({ error: "Project not found" });
+  };
 }

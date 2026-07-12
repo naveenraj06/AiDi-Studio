@@ -1,8 +1,13 @@
 import * as React from "react";
 import { useParams } from "react-router-dom";
-import { useApp } from "@/context/AppContext";
-import { useProject } from "@/hooks/useProjects";
-import { useCreateResource, useDeleteResource, useResources, useTestResourceConnection } from "@/hooks/useResources";
+import { useAuth } from "@/hooks/useAuth";
+import { useGetProjectQuery } from "@/store/api/projectsApi";
+import {
+  useCreateResourceMutation,
+  useDeleteResourceMutation,
+  useGetResourcesQuery,
+  useTestResourceConnectionMutation,
+} from "@/store/api/resourcesApi";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ImportResourceDialog, type ResourceFormResult } from "@/components/resources/ImportResourceDialog";
@@ -10,13 +15,13 @@ import type { ApiResource } from "@/types";
 
 export default function ResourcesPage() {
   const { projectId } = useParams<{ projectId: string }>();
-  const { toast } = useApp();
+  const { toast } = useAuth();
 
-  const { data: project, isLoading: projectLoading } = useProject(projectId);
-  const { data: resources, isLoading, isError } = useResources(projectId);
-  const createResource = useCreateResource(projectId ?? "");
-  const testConnection = useTestResourceConnection(projectId ?? "");
-  const deleteResource = useDeleteResource(projectId ?? "");
+  const { data: project, isLoading: projectLoading } = useGetProjectQuery(projectId ?? "", { skip: !projectId });
+  const { data: resources, isLoading, isError } = useGetResourcesQuery(projectId ?? "", { skip: !projectId });
+  const [createResource, { isLoading: creating }] = useCreateResourceMutation();
+  const [testConnection] = useTestResourceConnectionMutation();
+  const [deleteResource, { isLoading: deleting }] = useDeleteResourceMutation();
 
   const [showImport, setShowImport] = React.useState(false);
   const [testingId, setTestingId] = React.useState<string | null>(null);
@@ -26,7 +31,7 @@ export default function ResourcesPage() {
 
   const handleAdd = async (result: ResourceFormResult) => {
     try {
-      await createResource.mutateAsync(result);
+      await createResource({ projectId: projectId ?? "", input: result }).unwrap();
       setShowImport(false);
       toast("Resource added — run Test to verify it's reachable", "success");
     } catch {
@@ -37,7 +42,7 @@ export default function ResourcesPage() {
   const handleTest = async (id: string) => {
     setTestingId(id);
     try {
-      const resource = await testConnection.mutateAsync(id);
+      const resource = await testConnection({ projectId: projectId ?? "", id }).unwrap();
       toast(
         resource.status === "healthy"
           ? `Connection healthy — ${resource.last_test_latency_ms}ms`
@@ -54,7 +59,7 @@ export default function ResourcesPage() {
   const handleDelete = async () => {
     if (!deleteTarget) return;
     try {
-      await deleteResource.mutateAsync(deleteTarget.id);
+      await deleteResource({ projectId: projectId ?? "", id: deleteTarget.id }).unwrap();
       toast("Resource deleted", "success");
       setDeleteTarget(null);
     } catch {
@@ -180,7 +185,7 @@ export default function ResourcesPage() {
         open={showImport}
         onOpenChange={setShowImport}
         onSubmit={handleAdd}
-        submitting={createResource.isPending}
+        submitting={creating}
       />
 
       <ConfirmDialog
@@ -192,7 +197,7 @@ export default function ResourcesPage() {
             ? `"${deleteTarget.name}" is used by ${deleteTarget.usedBy} widget${deleteTarget.usedBy === 1 ? "" : "s"}. Deleting it leaves those widgets without a data source — they'll need a new resource assigned.`
             : `This permanently deletes "${deleteTarget?.name}".`
         }
-        confirming={deleteResource.isPending}
+        confirming={deleting}
         onConfirm={handleDelete}
       />
     </div>

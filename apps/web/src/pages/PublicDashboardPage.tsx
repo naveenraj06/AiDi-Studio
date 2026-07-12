@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useParams } from "react-router-dom";
-import { usePublicDashboard } from "@/hooks/usePublicDashboard";
-import { ApiError } from "@/lib/api";
+import { useGetPublicDashboardQuery } from "@/store/api/publicDashboardApi";
+import type { AxiosBaseQueryError } from "@/store/axiosBaseQuery";
 import { deriveLiveSource } from "@/lib/liveData";
 import { TYPE_COLOR } from "@/components/widgets/widgetTypeMeta";
 import { WidgetRenderer } from "@/components/widgets/WidgetRenderer";
@@ -23,10 +23,14 @@ export default function PublicDashboardPage() {
   const [submittedPassword, setSubmittedPassword] = React.useState<string | undefined>(undefined);
   const [wrongPassword, setWrongPassword] = React.useState(false);
 
-  const { data: dashboard, isLoading, error } = usePublicDashboard(slug, submittedPassword);
+  const { data: dashboard, isLoading, error } = useGetPublicDashboardQuery(
+    { slug: slug ?? "", password: submittedPassword },
+    { skip: !slug },
+  );
+  const queryError = error as AxiosBaseQueryError | undefined;
 
-  const locked = error instanceof ApiError && error.status === 401;
-  const notFound = error instanceof ApiError && error.status !== 401;
+  const locked = queryError?.status === 401;
+  const notFound = !!queryError && queryError.status !== 401;
 
   const onUnlock = () => {
     if (!pw) return;
@@ -51,7 +55,7 @@ export default function PublicDashboardPage() {
   if (locked) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-bg-0 text-ink-1">
-        <div className="w-[360px] rounded-[14px] border border-border-default bg-bg-1 p-7">
+        <div className="w-[360px] rounded-xl border border-border-default bg-bg-1 p-7">
           <div className="mb-2.5 text-[30px]">🔑</div>
           <div className="font-display mb-1.5 text-[17px] font-bold">Password protected</div>
           <div className="mb-[18px] text-[12px] text-ink-3">This dashboard requires a password to view.</div>
@@ -97,7 +101,7 @@ export default function PublicDashboardPage() {
             <option>Year to date</option>
           </select>
           <div className="flex items-center gap-1.5 text-[11px] text-ink-3">
-            <div className="h-4 w-4 rounded-[4px]" style={{ background: "linear-gradient(135deg, #8b5cf6, #22d3ee)" }} />
+            <div className="h-4 w-4 rounded-xs" style={{ background: "linear-gradient(135deg, #8b5cf6, #22d3ee)" }} />
             Powered by AiDi Studio
           </div>
         </div>

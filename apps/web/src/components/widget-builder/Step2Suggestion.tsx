@@ -61,7 +61,7 @@ export function Step2Suggestion({
             {suggestion.mapping.map((m) => (
               <div
                 key={m.field}
-                className="flex justify-between rounded-[7px] border border-border-subtle bg-surface-sunken px-2.5 py-1.5 text-[12px]"
+                className="flex justify-between rounded-sm border border-border-subtle bg-surface-sunken px-2.5 py-1.5 text-[12px]"
               >
                 <span className="font-mono text-brand-cyan">{m.field}</span>
                 <span className="text-ink-3">→</span>

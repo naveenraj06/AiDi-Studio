@@ -1,6 +1,8 @@
+import * as React from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
-import { AppProvider } from "@/context/AppContext";
 import { RequireAuth, PublicOnly } from "@/routes/guards";
+import { ToastViewport } from "@/components/ui/toast";
+import { useAppSelector } from "@/store/hooks";
 import AppShell from "@/layouts/AppShell";
 
 import LandingPage from "@/pages/LandingPage";
@@ -23,44 +25,52 @@ import BillingPage from "@/pages/BillingPage";
 
 import PublicDashboardPage from "@/pages/PublicDashboardPage";
 
+function ThemeEffect() {
+  const theme = useAppSelector((s) => s.ui.theme);
+  React.useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+  }, [theme]);
+  return null;
+}
+
 function App() {
   return (
     <BrowserRouter>
-      <AppProvider>
-        <Routes>
-          <Route path="/" element={<Navigate to="/landing" replace />} />
+      <ThemeEffect />
+      <Routes>
+        <Route path="/" element={<Navigate to="/landing" replace />} />
 
-          <Route element={<PublicOnly />}>
-            <Route path="/landing" element={<LandingPage />} />
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/signup" element={<SignupPage />} />
-            <Route path="/verify-email" element={<VerifyEmailPage />} />
-            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-            <Route path="/reset-password" element={<ResetPasswordPage />} />
+        <Route element={<PublicOnly />}>
+          <Route path="/landing" element={<LandingPage />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/signup" element={<SignupPage />} />
+          <Route path="/verify-email" element={<VerifyEmailPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
+        </Route>
+
+        <Route path="/d/:slug" element={<PublicDashboardPage />} />
+        <Route path="/d/:slug/unlock" element={<PublicDashboardPage />} />
+        <Route path="/d/:slug/embed" element={<PublicDashboardPage />} />
+
+        <Route element={<RequireAuth />}>
+          <Route element={<AppShell />}>
+            <Route path="/projects" element={<ProjectsPage />} />
+            <Route path="/team" element={<TeamPage />} />
+            <Route path="/billing" element={<BillingPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/projects/:projectId/dashboards" element={<DashboardsListPage />} />
+            <Route path="/projects/:projectId/dashboards/:dashboardId" element={<DashboardCanvasPage />} />
+            <Route path="/projects/:projectId/resources" element={<ResourcesPage />} />
+            <Route path="/projects/:projectId/widgets" element={<WidgetsLibraryPage />} />
+            <Route path="/projects/:projectId/widgets/:widgetId" element={<WidgetBuilderPage />} />
+            <Route path="/projects/:projectId/embed" element={<EmbedPage />} />
           </Route>
+        </Route>
 
-          <Route path="/d/:slug" element={<PublicDashboardPage />} />
-          <Route path="/d/:slug/unlock" element={<PublicDashboardPage />} />
-          <Route path="/d/:slug/embed" element={<PublicDashboardPage />} />
-
-          <Route element={<RequireAuth />}>
-            <Route element={<AppShell />}>
-              <Route path="/projects" element={<ProjectsPage />} />
-              <Route path="/team" element={<TeamPage />} />
-              <Route path="/billing" element={<BillingPage />} />
-              <Route path="/settings" element={<SettingsPage />} />
-              <Route path="/projects/:projectId/dashboards" element={<DashboardsListPage />} />
-              <Route path="/projects/:projectId/dashboards/:dashboardId" element={<DashboardCanvasPage />} />
-              <Route path="/projects/:projectId/resources" element={<ResourcesPage />} />
-              <Route path="/projects/:projectId/widgets" element={<WidgetsLibraryPage />} />
-              <Route path="/projects/:projectId/widgets/:widgetId" element={<WidgetBuilderPage />} />
-              <Route path="/projects/:projectId/embed" element={<EmbedPage />} />
-            </Route>
-          </Route>
-
-          <Route path="*" element={<Navigate to="/landing" replace />} />
-        </Routes>
-      </AppProvider>
+        <Route path="*" element={<Navigate to="/landing" replace />} />
+      </Routes>
+      <ToastViewport />
     </BrowserRouter>
   );
 }
