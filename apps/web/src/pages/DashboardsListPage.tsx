@@ -1,9 +1,9 @@
 import * as React from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { useApp } from "@/context/AppContext";
-import { useProject } from "@/hooks/useProjects";
-import { useCreateDashboard, useDashboards, useDeleteDashboard } from "@/hooks/useDashboards";
-import { useWidgets } from "@/hooks/useWidgets";
+import { useAuth } from "@/hooks/useAuth";
+import { useGetProjectQuery } from "@/store/api/projectsApi";
+import { useCreateDashboardMutation, useDeleteDashboardMutation, useGetDashboardsQuery } from "@/store/api/dashboardsApi";
+import { useGetWidgetsQuery } from "@/store/api/widgetsApi";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -16,14 +16,14 @@ import type { Dashboard } from "@/types";
 
 export default function DashboardsListPage() {
   const { projectId } = useParams<{ projectId: string }>();
-  const { toast } = useApp();
+  const { toast } = useAuth();
   const navigate = useNavigate();
 
-  const { data: project, isLoading: projectLoading } = useProject(projectId);
-  const { data: dashboards, isLoading, isError } = useDashboards(projectId);
-  const { data: widgets } = useWidgets(projectId);
-  const createDashboard = useCreateDashboard(projectId ?? "");
-  const deleteDashboard = useDeleteDashboard(projectId ?? "");
+  const { data: project, isLoading: projectLoading } = useGetProjectQuery(projectId ?? "", { skip: !projectId });
+  const { data: dashboards, isLoading, isError } = useGetDashboardsQuery(projectId ?? "", { skip: !projectId });
+  const { data: widgets } = useGetWidgetsQuery(projectId ?? "", { skip: !projectId });
+  const [createDashboard, { isLoading: creatingDashboard }] = useCreateDashboardMutation();
+  const [deleteDashboard, { isLoading: deletingDashboard }] = useDeleteDashboardMutation();
 
   const widgetMap = React.useMemo(() => {
     const m: Record<string, NonNullable<typeof widgets>[number]> = {};
@@ -49,7 +49,7 @@ export default function DashboardsListPage() {
       return;
     }
     try {
-      const dashboard = await createDashboard.mutateAsync(trimmed);
+      const dashboard = await createDashboard({ projectId: projectId ?? "", name: trimmed }).unwrap();
       setOpen(false);
       toast("Dashboard created", "success");
       navigate(`/projects/${projectId}/dashboards/${dashboard.id}`);
@@ -61,7 +61,7 @@ export default function DashboardsListPage() {
   const handleDelete = async () => {
     if (!deleteTarget) return;
     try {
-      await deleteDashboard.mutateAsync(deleteTarget.id);
+      await deleteDashboard({ projectId: projectId ?? "", dashboardId: deleteTarget.id }).unwrap();
       toast("Dashboard deleted", "success");
       setDeleteTarget(null);
     } catch {
@@ -135,7 +135,7 @@ export default function DashboardsListPage() {
               <div
                 key={d.id}
                 onClick={() => navigate(`/projects/${projectId}/dashboards/${d.id}`)}
-                className="group cursor-pointer rounded-xl border border-border-default bg-bg-1 p-[18px] transition-colors hover:border-[#2e2e3a] hover:bg-[#131318]"
+                className="group cursor-pointer rounded-xl border border-border-default bg-bg-1 p-[18px] transition-colors hover:border-border-strong hover:bg-bg-2"
               >
                 <div className="mb-3 flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[14px] font-semibold text-ink-1">
@@ -147,17 +147,15 @@ export default function DashboardsListPage() {
                       setDeleteTarget(d);
                     }}
                     title="Delete dashboard"
-                    className="shrink-0 cursor-pointer rounded-[5px] px-1 py-0.5 text-[12px] text-ink-3 opacity-0 transition-opacity hover:bg-[#2a1518] hover:text-brand-red group-hover:opacity-100"
+                    className="shrink-0 cursor-pointer rounded-xs px-1 py-0.5 text-[12px] text-ink-3 opacity-0 transition-opacity hover:bg-brand-red-surface hover:text-brand-red group-hover:opacity-100"
                   >
                     ✕
                   </div>
-                  <Badge bg={published ? "#0e2f24" : "var(--color-border-strong)"} color={published ? "var(--color-brand-green)" : "var(--color-ink-2)"}>
-                    {d.status}
-                  </Badge>
+                  <Badge variant={published ? "success" : "neutral"}>{d.status}</Badge>
                 </div>
                 <div className="mb-3 grid h-[90px] grid-cols-3 gap-1.5 rounded-lg border border-border-subtle bg-surface-sunken p-2">
                   {thumbTypes.map((t, i) => (
-                    <div key={i} className="flex items-center justify-center rounded-[5px] bg-bg-2 text-[14px] text-ink-3">
+                    <div key={i} className="flex items-center justify-center rounded-xs bg-bg-2 text-[14px] text-ink-3">
                       {t}
                     </div>
                   ))}
@@ -187,8 +185,8 @@ export default function DashboardsListPage() {
             <Button variant="ghost" size="sm" onClick={() => setOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleCreate} disabled={createDashboard.isPending}>
-              {createDashboard.isPending ? "Creating…" : "Create"}
+            <Button onClick={handleCreate} disabled={creatingDashboard}>
+              {creatingDashboard ? "Creating…" : "Create"}
             </Button>
           </div>
         </DialogContent>
@@ -199,7 +197,7 @@ export default function DashboardsListPage() {
         onOpenChange={(open) => !open && setDeleteTarget(null)}
         title="Delete dashboard?"
         description={`This permanently deletes "${deleteTarget?.name}", including its layout and (if published) its public link. Widgets themselves aren't deleted.`}
-        confirming={deleteDashboard.isPending}
+        confirming={deletingDashboard}
         onConfirm={handleDelete}
       />
     </div>

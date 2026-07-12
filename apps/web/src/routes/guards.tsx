@@ -1,5 +1,5 @@
 import { Navigate, Outlet } from "react-router-dom";
-import { useApp } from "@/context/AppContext";
+import { useAuth } from "@/hooks/useAuth";
 
 function SessionCheck() {
   return (
@@ -10,14 +10,14 @@ function SessionCheck() {
 }
 
 export function RequireAuth() {
-  const { session, sessionLoading } = useApp();
+  const { session, sessionLoading } = useAuth();
   if (sessionLoading) return <SessionCheck />;
   if (!session) return <Navigate to="/login" replace />;
   return <Outlet />;
 }
 
 export function PublicOnly() {
-  const { session, sessionLoading, isPasswordRecovery } = useApp();
+  const { session, sessionLoading, isPasswordRecovery } = useAuth();
   if (sessionLoading) return <SessionCheck />;
   if (session && !isPasswordRecovery) return <Navigate to="/projects" replace />;
   return <Outlet />;

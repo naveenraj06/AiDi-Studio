@@ -1,12 +1,12 @@
 import * as React from "react";
 import { Link } from "react-router-dom";
-import { useApp } from "@/context/AppContext";
+import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import AuthLayout from "./AuthLayout";
 import { FormField } from "./FormField";
 
 export default function ForgotPasswordPage() {
-  const { sendResetLink } = useApp();
+  const { sendResetLink } = useAuth();
   const [email, setEmail] = React.useState("");
   const [errors, setErrors] = React.useState<Record<string, string>>({});
   const [pending, setPending] = React.useState(false);

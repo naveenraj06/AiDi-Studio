@@ -1,5 +1,5 @@
 import * as React from "react";
-import { useApp } from "@/context/AppContext";
+import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/lib/supabaseClient";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 export default function SettingsPage() {
-  const { session, toast, logoutAllDevices } = useApp();
+  const { session, toast, logoutAllDevices } = useAuth();
 
   const [name, setName] = React.useState(session?.user.display_name ?? "");
   const [savingProfile, setSavingProfile] = React.useState(false);
@@ -173,7 +173,7 @@ export default function SettingsPage() {
             size="sm"
             onClick={onToggle2fa}
             disabled={checkingMfa || enrolling}
-            style={totpEnabled ? { background: "#2a1518", color: "var(--color-brand-red)" } : undefined}
+            className={totpEnabled ? "bg-brand-red-surface text-brand-red hover:bg-brand-red-surface" : undefined}
           >
             {enrolling ? "Starting…" : totpEnabled ? "Disable" : "Enable"}
           </Button>

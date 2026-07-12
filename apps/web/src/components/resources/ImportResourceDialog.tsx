@@ -76,7 +76,7 @@ export function ImportResourceDialog({ open, onOpenChange, onSubmit, submitting 
       <DialogContent widthClassName="w-[480px]">
         <DialogTitle>Add API resource</DialogTitle>
 
-        <div className="mb-[18px] flex gap-1.5 rounded-[9px] border border-border-strong bg-bg-0 p-1">
+        <div className="mb-[18px] flex gap-1.5 rounded-md border border-border-strong bg-bg-0 p-1">
           {TABS.map((t) => (
             <div
               key={t.key}
@@ -142,7 +142,7 @@ export function ImportResourceDialog({ open, onOpenChange, onSubmit, submitting 
         )}
 
         {tab === "postman" && (
-          <div className="rounded-[10px] border-2 border-dashed border-border-strong p-[30px] text-center text-[13px] text-ink-3">
+          <div className="rounded-lg border-2 border-dashed border-border-strong p-[30px] text-center text-[13px] text-ink-3">
             Postman collection import isn't available yet — use the Manual tab to add resources one at a time.
           </div>
         )}

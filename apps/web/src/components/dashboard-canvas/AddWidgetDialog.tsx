@@ -20,7 +20,7 @@ export function AddWidgetDialog({ open, onOpenChange, availableWidgets, onCreate
 
         <div
           onClick={onCreateNew}
-          className="mb-3.5 flex cursor-pointer items-center gap-2.5 rounded-[9px] border border-dashed border-[#2e2e3a] bg-bg-2 p-3"
+          className="mb-3.5 flex cursor-pointer items-center gap-2.5 rounded-md border border-dashed border-border-strong bg-bg-2 p-3"
         >
           <span className="text-[16px]">✦</span>
           <span className="text-[13px] font-semibold">Create new widget in builder</span>

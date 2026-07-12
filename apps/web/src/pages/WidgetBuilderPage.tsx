@@ -1,11 +1,11 @@
 import * as React from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import type { ApiResource, WidgetFineTune, WidgetSuggestion, WidgetType } from "@/types";
-import { useApp } from "@/context/AppContext";
-import { useProject } from "@/hooks/useProjects";
-import { useResources } from "@/hooks/useResources";
-import { useCreateWidget, useUpdateWidget, useWidgets } from "@/hooks/useWidgets";
-import { getErrorMessage } from "@/lib/api";
+import { useAuth } from "@/hooks/useAuth";
+import { useGetProjectQuery } from "@/store/api/projectsApi";
+import { useGetResourcesQuery } from "@/store/api/resourcesApi";
+import { useCreateWidgetMutation, useGetWidgetsQuery, useUpdateWidgetMutation } from "@/store/api/widgetsApi";
+import { getErrorMessage } from "@/lib/errors";
 import { suggestFor } from "@/components/widget-builder/suggestFor";
 import { StepProgress } from "@/components/widget-builder/StepProgress";
 import { Step1Resource } from "@/components/widget-builder/Step1Resource";
@@ -24,14 +24,14 @@ const DEFAULT_FT: WidgetFineTune = {
 export default function WidgetBuilderPage() {
   const { projectId, widgetId } = useParams<{ projectId: string; widgetId: string }>();
   const navigate = useNavigate();
-  const { toast } = useApp();
+  const { toast } = useAuth();
   const isEditing = widgetId !== "new";
 
-  const { data: project, isLoading: projectLoading } = useProject(projectId);
-  const { data: resources, isLoading: resourcesLoading } = useResources(projectId);
-  const { data: widgets, isLoading: widgetsLoading } = useWidgets(projectId);
-  const createWidget = useCreateWidget(projectId ?? "");
-  const updateWidget = useUpdateWidget(projectId ?? "");
+  const { data: project, isLoading: projectLoading } = useGetProjectQuery(projectId ?? "", { skip: !projectId });
+  const { data: resources, isLoading: resourcesLoading } = useGetResourcesQuery(projectId ?? "", { skip: !projectId });
+  const { data: widgets, isLoading: widgetsLoading } = useGetWidgetsQuery(projectId ?? "", { skip: !projectId });
+  const [createWidget] = useCreateWidgetMutation();
+  const [updateWidget] = useUpdateWidgetMutation();
 
   const existingWidget = isEditing ? widgets?.find((w) => w.id === widgetId) : undefined;
   const widgetNotFound = isEditing && !widgetsLoading && !!widgets && !existingWidget;
@@ -100,7 +100,8 @@ export default function WidgetBuilderPage() {
     setSaving(true);
     try {
       if (isEditing && widgetId) {
-        await updateWidget.mutateAsync({
+        await updateWidget({
+          projectId: projectId ?? "",
           id: widgetId,
           input: {
             name: ft.title,
@@ -109,16 +110,19 @@ export default function WidgetBuilderPage() {
             resourceId: selectedResourceId,
             fineTune: ft,
           },
-        });
+        }).unwrap();
         toast("Widget updated", "success");
       } else {
-        await createWidget.mutateAsync({
-          name: ft.title,
-          type: chosenType,
-          isTemplate: saveAsTemplate,
-          resourceId: selectedResourceId,
-          fineTune: ft,
-        });
+        await createWidget({
+          projectId: projectId ?? "",
+          input: {
+            name: ft.title,
+            type: chosenType,
+            isTemplate: saveAsTemplate,
+            resourceId: selectedResourceId,
+            fineTune: ft,
+          },
+        }).unwrap();
         toast("Widget saved", "success");
       }
       navigate(`/projects/${projectId}/widgets`);

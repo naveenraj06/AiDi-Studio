@@ -25,7 +25,7 @@ export function Step1Resource({ resources, selectedResourceId, onSelect, onNext 
             <div
               key={r.id}
               onClick={() => onSelect(r)}
-              className="flex cursor-pointer items-center gap-3 rounded-[10px] border px-4 py-3.5 transition-colors"
+              className="flex cursor-pointer items-center gap-3 rounded-lg border px-4 py-3.5 transition-colors"
               style={{
                 background: selected ? "var(--color-surface-selected)" : "var(--color-bg-1)",
                 borderColor: selected ? "var(--color-brand-violet)" : "var(--color-border-default)",

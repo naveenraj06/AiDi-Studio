@@ -1,10 +1,14 @@
 import * as React from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { useApp } from "@/context/AppContext";
-import { useProject } from "@/hooks/useProjects";
-import { useDashboard, useReplaceDashboardTiles, useUpdateDashboard } from "@/hooks/useDashboards";
-import { useWidgets } from "@/hooks/useWidgets";
-import { getErrorMessage } from "@/lib/api";
+import { useAuth } from "@/hooks/useAuth";
+import { useGetProjectQuery } from "@/store/api/projectsApi";
+import {
+  useGetDashboardQuery,
+  useReplaceDashboardTilesMutation,
+  useUpdateDashboardMutation,
+} from "@/store/api/dashboardsApi";
+import { useGetWidgetsQuery } from "@/store/api/widgetsApi";
+import { getErrorMessage } from "@/lib/errors";
 import { deriveLiveSource } from "@/lib/liveData";
 import type { DashboardTile, Widget } from "@/types";
 import { Button } from "@/components/ui/button";
@@ -16,14 +20,21 @@ import { PublishDialog } from "@/components/dashboard-canvas/PublishDialog";
 
 export default function DashboardCanvasPage() {
   const { projectId, dashboardId } = useParams<{ projectId: string; dashboardId: string }>();
-  const { toast } = useApp();
+  const { toast } = useAuth();
   const navigate = useNavigate();
 
-  const { data: project, isLoading: projectLoading } = useProject(projectId);
-  const { data: dashboard, isLoading: dashboardLoading, isError } = useDashboard(projectId, dashboardId);
-  const { data: allWidgets } = useWidgets(projectId);
-  const replaceTiles = useReplaceDashboardTiles(projectId ?? "", dashboardId ?? "");
-  const updateDashboard = useUpdateDashboard(projectId ?? "", dashboardId ?? "");
+  const { data: project, isLoading: projectLoading } = useGetProjectQuery(projectId ?? "", { skip: !projectId });
+  const {
+    data: dashboard,
+    isLoading: dashboardLoading,
+    isError,
+  } = useGetDashboardQuery(
+    { projectId: projectId ?? "", dashboardId: dashboardId ?? "" },
+    { skip: !projectId || !dashboardId },
+  );
+  const { data: allWidgets } = useGetWidgetsQuery(projectId ?? "", { skip: !projectId });
+  const [replaceTiles, { isLoading: savingTiles }] = useReplaceDashboardTilesMutation();
+  const [updateDashboard, { isLoading: updatingDashboard }] = useUpdateDashboardMutation();
 
   const [layout, setLayout] = React.useState<DashboardTile[]>([]);
   const [dragIndex, setDragIndex] = React.useState<number | null>(null);
@@ -46,13 +57,17 @@ export default function DashboardCanvasPage() {
   const persistLayout = React.useCallback(
     async (next: DashboardTile[]) => {
       try {
-        await replaceTiles.mutateAsync(next.map((t) => ({ widgetId: t.id, colSpan: t.colSpan, rowSpan: t.rowSpan })));
+        await replaceTiles({
+          projectId: projectId ?? "",
+          dashboardId: dashboardId ?? "",
+          tiles: next.map((t) => ({ widgetId: t.id, colSpan: t.colSpan, rowSpan: t.rowSpan })),
+        }).unwrap();
         setLastSavedAt(Date.now());
       } catch {
         toast("Couldn't save the layout — try again", "error");
       }
     },
-    [replaceTiles, toast],
+    [replaceTiles, toast, projectId, dashboardId],
   );
 
   if (!projectId || !dashboardId) return null;
@@ -131,7 +146,11 @@ export default function DashboardCanvasPage() {
   const togglePublishState = async () => {
     const nowPublished = dashboard.status !== "published";
     try {
-      await updateDashboard.mutateAsync({ status: nowPublished ? "published" : "draft" });
+      await updateDashboard({
+        projectId: projectId ?? "",
+        dashboardId: dashboardId ?? "",
+        input: { status: nowPublished ? "published" : "draft" },
+      }).unwrap();
       toast(nowPublished ? "Dashboard published" : "Dashboard unpublished", "success");
       setShowPublish(false);
     } catch (err) {
@@ -141,7 +160,11 @@ export default function DashboardCanvasPage() {
 
   const setSharePassword = async (password: string) => {
     try {
-      await updateDashboard.mutateAsync({ sharePassword: password });
+      await updateDashboard({
+        projectId: projectId ?? "",
+        dashboardId: dashboardId ?? "",
+        input: { sharePassword: password },
+      }).unwrap();
       toast("Password set", "success");
     } catch (err) {
       toast(getErrorMessage(err, "Couldn't set the password"), "error");
@@ -150,14 +173,18 @@ export default function DashboardCanvasPage() {
 
   const removeSharePassword = async () => {
     try {
-      await updateDashboard.mutateAsync({ sharePassword: null });
+      await updateDashboard({
+        projectId: projectId ?? "",
+        dashboardId: dashboardId ?? "",
+        input: { sharePassword: null },
+      }).unwrap();
       toast("Password removed", "success");
     } catch (err) {
       toast(getErrorMessage(err, "Couldn't remove the password"), "error");
     }
   };
 
-  const saveLabel = replaceTiles.isPending
+  const saveLabel = savingTiles
     ? "Saving…"
     : lastSavedAt
       ? `Saved ${Math.max(0, Math.round((Date.now() - lastSavedAt) / 1000))}s ago`
@@ -178,12 +205,7 @@ export default function DashboardCanvasPage() {
         <div className="mb-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="font-display text-[22px] font-bold text-ink-1">{dashboard.name}</div>
-            <Badge
-              bg={isPublished ? "#0e2f24" : "var(--color-border-strong)"}
-              color={isPublished ? "var(--color-brand-green)" : "var(--color-ink-2)"}
-            >
-              {dashboard.status}
-            </Badge>
+            <Badge variant={isPublished ? "success" : "neutral"}>{dashboard.status}</Badge>
           </div>
           <div className="flex items-center gap-3.5">
             <div className="text-[11px] text-ink-3">{saveLabel}</div>
@@ -272,8 +294,8 @@ export default function DashboardCanvasPage() {
         viewerFilters={viewerFilters}
         branding={branding}
         hasSharePassword={dashboard.has_share_password}
-        updatingPassword={updateDashboard.isPending}
-        publishing={updateDashboard.isPending}
+        updatingPassword={updatingDashboard}
+        publishing={updatingDashboard}
         onToggleViewerFilters={() => setViewerFilters((v) => !v)}
         onToggleBranding={() => setBranding((v) => !v)}
         onCopyUrl={copyUrl}

@@ -6,7 +6,7 @@
   --font-display: "Sora", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
 
-  /* Surfaces, darkest to lightest */
+  /* Surfaces, darkest to lightest (dark theme values — overridden per-theme below) */
   --color-bg-0: #0b0b10;
   --color-bg-1: #101014;
   --color-bg-2: #16161c;
@@ -37,6 +37,69 @@
   --color-brand-green-ink: #04150e;
   --color-brand-amber: #fbbf24;
   --color-brand-red: #f87171;
+  --color-brand-red-surface: #2f1518;
+  --color-brand-green-surface: #0e2f24;
+
+  /* Radius scale — overrides Tailwind's default rounded-* scale so every
+     rounded-* utility in the app draws from one system instead of mixing
+     Tailwind defaults with one-off arbitrary bracket values. */
+  --radius-xs: 5px;
+  --radius-sm: 7px;
+  --radius-md: 9px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
+  --radius-2xl: 20px;
+
+  /* Shadow scale — overrides Tailwind's default shadow-* scale. */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.25);
+  --shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 8px 20px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 12px 30px rgba(0, 0, 0, 0.5);
+  --shadow-xl: 0 24px 48px rgba(0, 0, 0, 0.55);
+
+  /* Motion */
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --duration-slow: 320ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/*
+ * Light theme — overrides the CSS custom properties above (not the @theme
+ * block itself) so every Tailwind utility that already resolves to
+ * var(--color-*) repaints automatically. Applied by setting
+ * document.documentElement.dataset.theme = "light" (see uiSlice / App.tsx).
+ * :root stays on the dark values by default so there's no flash before JS
+ * runs and picks a theme.
+ */
+:root[data-theme="light"] {
+  --color-bg-0: #f6f6fa;
+  --color-bg-1: #ffffff;
+  --color-bg-2: #f1f1f6;
+  --color-bg-3: #e7e7ee;
+
+  --color-surface-sunken: #eeeef3;
+  --color-surface-selected: #efe9fe;
+
+  --color-ink-1: #15151c;
+  --color-ink-2: #55555f;
+  --color-ink-3: #86868f;
+
+  --color-border-subtle: #ececf1;
+  --color-border-default: #e2e2e9;
+  --color-border-strong: #d5d5df;
+  --color-border-muted: #c7c7d2;
+  --color-border-track: #b2b2be;
+
+  --color-brand-violet-light: #7c3aed;
+  --color-brand-red-surface: #fde8e8;
+  --color-brand-green-surface: #dcfce8;
+
+  --shadow-xs: 0 1px 2px rgba(15, 15, 30, 0.06);
+  --shadow-sm: 0 2px 6px rgba(15, 15, 30, 0.08);
+  --shadow-md: 0 8px 20px rgba(15, 15, 30, 0.1);
+  --shadow-lg: 0 12px 30px rgba(15, 15, 30, 0.14);
+  --shadow-xl: 0 24px 48px rgba(15, 15, 30, 0.18);
 }
 
 @layer base {
@@ -55,6 +118,9 @@
     color: var(--color-ink-1);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
+    transition:
+      background-color var(--duration-base) var(--ease-out),
+      color var(--duration-base) var(--ease-out);
   }
 
   ::selection {
@@ -67,7 +133,7 @@
     text-decoration: none;
   }
   a:hover {
-    color: #c4b5fd;
+    color: var(--color-brand-violet);
   }
 
   ::-webkit-scrollbar {
@@ -79,10 +145,10 @@
   }
   ::-webkit-scrollbar-thumb {
     background: var(--color-border-muted);
-    border-radius: 8px;
+    border-radius: var(--radius-md);
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: #383844;
+    background: var(--color-border-track);
   }
 
   input,
