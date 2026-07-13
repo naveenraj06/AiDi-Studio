@@ -11,10 +11,16 @@ import {
 } from "framer-motion";
 import {
   ArrowRight,
+  BarChart3,
   Boxes,
+  Check,
+  CircleDot,
+  Crown,
   Grid3x3,
   KeyRound,
+  LineChart,
   Lock,
+  PieChart,
   Plug,
   Share2,
   ShieldCheck,
@@ -23,6 +29,7 @@ import {
   Wand2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 const STEPS = [
   {
@@ -30,18 +37,21 @@ const STEPS = [
     icon: Plug,
     title: "Connect an API",
     body: "Paste a URL, import a Postman collection or OpenAPI spec, or drop in a cURL command. GET-only, sandboxed — nothing runs on your infrastructure.",
+    visual: "connect" as const,
   },
   {
     n: "02",
     icon: Wand2,
     title: "AI suggests the widget",
     body: "AiDi reads the response shape and recommends a chart type with field mapping already filled in. Accept it, swap the type, or fine-tune colors and legends.",
+    visual: "suggest" as const,
   },
   {
     n: "03",
     icon: Share2,
     title: "Publish or embed",
     body: "Arrange widgets on a dashboard canvas, then publish with an optional password. Share the link or drop an iframe snippet straight into your product.",
+    visual: "publish" as const,
   },
 ];
 
@@ -50,39 +60,73 @@ const FEATURES = [
     icon: Sparkles,
     title: "AI widget suggestions",
     body: "Every connected resource gets a suggested chart type and field mapping — line, bar, stat, table, donut, or map — based on the shape of its response.",
-  },
-  {
-    icon: Grid3x3,
-    title: "Reusable widget library",
-    body: "Build a widget once and drop it into as many dashboards as you need. Save any widget as a template for the next resource that looks similar.",
+    span: "lg:col-span-3 lg:row-span-2",
+    visual: "suggest" as const,
   },
   {
     icon: ShieldCheck,
     title: "GET-only, sandboxed connections",
     body: "Every API resource is read-only in v1 and requests are guarded server-side — no accidental writes, no SSRF into your internal network.",
+    span: "lg:col-span-3",
+    visual: "shield" as const,
+  },
+  {
+    icon: Grid3x3,
+    title: "Reusable widget library",
+    body: "Build a widget once and drop it into as many dashboards as you need. Save it as a template for the next similar resource.",
+    span: "lg:col-span-2",
+    visual: "stack" as const,
   },
   {
     icon: Users,
     title: "Roles per project",
-    body: "Invite teammates as editors or viewers per project. Owners keep control of billing, connected APIs, and who can publish.",
+    body: "Invite teammates as editors or viewers. Owners keep control of billing and who can publish.",
+    span: "lg:col-span-2",
+    visual: "avatars" as const,
   },
   {
     icon: Lock,
     title: "Password-protected sharing",
-    body: "Publish a dashboard publicly, gate it behind a password, or keep it in draft while you build. Public views never expose your API credentials.",
+    body: "Gate a published dashboard behind a password, or keep it in draft while you build.",
+    span: "lg:col-span-2",
+    visual: "lock" as const,
   },
   {
     icon: Boxes,
     title: "Embed anywhere",
     body: "Every published dashboard ships with an iframe snippet and a raw JSON API, so you can drop live data into your own app or docs.",
+    span: "lg:col-span-6",
+    visual: "embed" as const,
   },
 ];
 
 const PLANS = [
-  { name: "Free", price: "$0", limits: "1 project · 3 dashboards · 10 widgets" },
-  { name: "Pro", price: "$29", limits: "5 projects · unlimited dashboards/widgets" },
-  { name: "Team", price: "$49", limits: "Unlimited projects · roles · priority support" },
-  { name: "Enterprise", price: "Custom", limits: "SSO/SAML · audit logs · dedicated support" },
+  {
+    name: "Free",
+    price: "$0",
+    tagline: "Kick the tires",
+    features: ["1 project", "3 dashboards", "10 widgets"],
+  },
+  {
+    name: "Pro",
+    price: "$29",
+    tagline: "For growing teams",
+    features: ["5 projects", "Unlimited dashboards", "Unlimited widgets"],
+    highlight: true,
+    badge: "Most popular",
+  },
+  {
+    name: "Team",
+    price: "$49",
+    tagline: "Built for collaboration",
+    features: ["Unlimited projects", "Role-based access", "Priority support"],
+  },
+  {
+    name: "Enterprise",
+    price: "Custom",
+    tagline: "Security & scale",
+    features: ["SSO/SAML", "Audit logs", "Dedicated support"],
+  },
 ];
 
 const HIGHLIGHTS = [
@@ -175,6 +219,202 @@ function FloatingChip({
   );
 }
 
+/** Cursor-follow glow wrapper for grid tiles — a lighter, non-rotating sibling of TiltCard. */
+function SpotlightCard({
+  children,
+  className,
+  spotlightColor = "rgba(139,92,246,0.16)",
+}: {
+  children: React.ReactNode;
+  className?: string;
+  spotlightColor?: string;
+}) {
+  const ref = React.useRef<HTMLDivElement>(null);
+  const mx = useMotionValue(0);
+  const my = useMotionValue(0);
+  const background = useMotionTemplate`radial-gradient(240px circle at ${mx}px ${my}px, ${spotlightColor}, transparent 70%)`;
+
+  const onMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = ref.current?.getBoundingClientRect();
+    if (!rect) return;
+    mx.set(e.clientX - rect.left);
+    my.set(e.clientY - rect.top);
+  };
+
+  return (
+    <motion.div
+      ref={ref}
+      onMouseMove={onMouseMove}
+      whileHover={{ y: -6 }}
+      transition={{ type: "spring", stiffness: 300, damping: 22 }}
+      className={cn("group relative overflow-hidden rounded-xl border border-border-default bg-bg-1", className)}
+    >
+      <motion.div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+        style={{ background }}
+      />
+      <div className="relative flex h-full flex-col">{children}</div>
+    </motion.div>
+  );
+}
+
+function StepVisual({ kind }: { kind: "connect" | "suggest" | "publish" }) {
+  if (kind === "connect") {
+    return (
+      <div className="flex items-center gap-2 rounded-lg border border-border-subtle bg-surface-sunken px-3 py-2.5 font-mono text-[11px] text-ink-3">
+        <span className="shrink-0 rounded bg-brand-violet/15 px-1.5 py-0.5 text-[10px] font-bold text-brand-violet-light">
+          GET
+        </span>
+        <span className="truncate">api.stripe.com/v1/charges</span>
+        <motion.span
+          animate={{ opacity: [1, 0.25, 1] }}
+          transition={{ duration: 1.6, repeat: Infinity, ease: "easeInOut" }}
+          className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-brand-green"
+        />
+      </div>
+    );
+  }
+  if (kind === "suggest") {
+    return (
+      <div className="rounded-lg border border-border-subtle bg-surface-sunken p-3">
+        <div className="mb-2 flex items-center gap-1.5">
+          {[LineChart, BarChart3, PieChart].map((Icon, idx) => (
+            <div
+              key={idx}
+              className={cn(
+                "flex h-6 w-6 items-center justify-center rounded",
+                idx === 0 ? "bg-brand-violet/20 text-brand-violet-light" : "text-ink-3",
+              )}
+            >
+              <Icon className="h-3.5 w-3.5" />
+            </div>
+          ))}
+          <span className="ml-auto text-[10px] font-semibold text-brand-green">92% match</span>
+        </div>
+        <div className="h-1.5 overflow-hidden rounded-full bg-border-subtle">
+          <motion.div
+            className="h-full rounded-full bg-gradient-to-r from-brand-violet to-brand-cyan"
+            initial={{ width: 0 }}
+            whileInView={{ width: "92%" }}
+            viewport={{ once: true }}
+            transition={{ duration: 1, delay: 0.3, ease: EASE_OUT }}
+          />
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-center justify-between rounded-lg border border-border-subtle bg-surface-sunken px-3 py-2.5">
+      <div className="flex items-center gap-1.5 text-[11px] text-ink-3">
+        <Lock className="h-3 w-3" /> Password
+      </div>
+      <div className="flex items-center gap-1.5 rounded-full bg-brand-green-surface px-2 py-0.5 text-[10px] font-bold text-brand-green">
+        <CircleDot className="h-2.5 w-2.5" /> Published
+      </div>
+    </div>
+  );
+}
+
+function FeatureVisual({ kind }: { kind: "suggest" | "shield" | "stack" | "avatars" | "lock" | "embed" }) {
+  if (kind === "suggest") {
+    return (
+      <div className="mt-5 rounded-lg border border-border-subtle bg-surface-sunken p-4">
+        <svg width="100%" height="110" viewBox="0 0 400 110" preserveAspectRatio="none">
+          <motion.polyline
+            points="0,90 50,70 100,78 150,45 200,55 250,25 300,38 350,15 400,28"
+            fill="none"
+            stroke="#8b5cf6"
+            strokeWidth={3}
+            initial={{ pathLength: 0 }}
+            whileInView={{ pathLength: 1 }}
+            viewport={{ once: true }}
+            transition={{ duration: 1.4, ease: EASE_OUT, delay: 0.2 }}
+          />
+        </svg>
+        <div className="mt-2 flex items-center gap-2">
+          {["Line", "Bar", "Donut"].map((label, idx) => (
+            <span
+              key={label}
+              className={cn(
+                "rounded-full px-2.5 py-1 text-[10px] font-semibold",
+                idx === 0 ? "bg-brand-violet/20 text-brand-violet-light" : "bg-border-subtle text-ink-3",
+              )}
+            >
+              {label}
+            </span>
+          ))}
+        </div>
+      </div>
+    );
+  }
+  if (kind === "shield") {
+    return (
+      <div className="mt-5 flex items-center gap-2">
+        {["GET", "POST", "PUT", "DELETE"].map((m) => (
+          <span
+            key={m}
+            className={cn(
+              "rounded px-2 py-1 text-[10px] font-bold",
+              m === "GET" ? "bg-brand-green-surface text-brand-green" : "bg-border-subtle text-ink-3 line-through",
+            )}
+          >
+            {m}
+          </span>
+        ))}
+      </div>
+    );
+  }
+  if (kind === "stack") {
+    return (
+      <div className="relative mt-6 h-14">
+        {[0, 1, 2].map((i) => (
+          <div
+            key={i}
+            className="absolute h-12 rounded-lg border border-border-strong bg-bg-2"
+            style={{ top: i * 6, left: i * 10, right: 0, opacity: 1 - i * 0.28, zIndex: 3 - i }}
+          />
+        ))}
+      </div>
+    );
+  }
+  if (kind === "avatars") {
+    const colors = ["#8b5cf6", "#22d3ee", "#34d399"];
+    return (
+      <div className="mt-6 flex items-center">
+        {colors.map((c, i) => (
+          <div
+            key={c}
+            className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-bg-1 text-[10px] font-bold text-white"
+            style={{ background: c, marginLeft: i === 0 ? 0 : -8, zIndex: colors.length - i }}
+          >
+            {["O", "E", "V"][i]}
+          </div>
+        ))}
+        <span className="ml-3 text-[11px] text-ink-3">Owner · Editor · Viewer</span>
+      </div>
+    );
+  }
+  if (kind === "lock") {
+    return (
+      <motion.div
+        whileHover={{ rotate: [0, -8, 8, -4, 0] }}
+        transition={{ duration: 0.5 }}
+        className="mt-6 flex h-10 w-10 items-center justify-center rounded-lg border border-brand-amber/30 bg-brand-amber/10 text-brand-amber"
+      >
+        <Lock className="h-4.5 w-4.5" />
+      </motion.div>
+    );
+  }
+  return (
+    <div className="mt-5 rounded-lg border border-border-subtle bg-surface-sunken px-3.5 py-3 font-mono text-[11px] text-ink-3">
+      <span className="text-brand-cyan">{"<iframe "}</span>
+      src=<span className="text-brand-green">"aidi.studio/d/abc123"</span>
+      <span className="text-brand-cyan">{" />"}</span>
+    </div>
+  );
+}
+
 function AuroraBackground() {
   const { scrollY } = useScroll();
   const y1 = useTransform(scrollY, [0, 800], [0, 160]);
@@ -208,6 +448,49 @@ function AuroraBackground() {
         className="absolute left-1/3 top-64 h-[360px] w-[360px] rounded-full blur-[100px]"
         style={{ background: "radial-gradient(circle, #34d399, transparent 70%)" }}
       />
+    </div>
+  );
+}
+
+function HowItWorksTimeline() {
+  const containerRef = React.useRef<HTMLDivElement>(null);
+  const { scrollYProgress } = useScroll({ target: containerRef, offset: ["start 75%", "end 55%"] });
+  const lineScale = useSpring(scrollYProgress, { stiffness: 120, damping: 26 });
+
+  return (
+    <div ref={containerRef} className="relative grid grid-cols-1 gap-6 md:grid-cols-3 md:gap-5">
+      <div className="absolute left-[8%] right-[8%] top-11 hidden h-px bg-border-strong md:block">
+        <motion.div
+          className="h-full origin-left bg-gradient-to-r from-brand-violet to-brand-cyan"
+          style={{ scaleX: lineScale }}
+        />
+      </div>
+      {STEPS.map((step, i) => (
+        <motion.div
+          key={step.n}
+          variants={fadeUp}
+          whileHover={{ y: -8 }}
+          transition={{ type: "spring", stiffness: 300, damping: 22 }}
+          className={cn("relative", i === 1 && "md:mt-9")}
+        >
+          <div className="relative overflow-hidden rounded-xl border border-border-default bg-bg-1 p-6">
+            <div
+              aria-hidden
+              className="font-display pointer-events-none absolute -right-2 -top-7 select-none text-[100px] font-extrabold leading-none text-border-subtle"
+            >
+              {step.n}
+            </div>
+            <div className="relative z-10 mb-4 flex h-11 w-11 items-center justify-center rounded-lg border border-brand-violet/30 bg-brand-violet/10 text-brand-violet-light">
+              <step.icon className="h-5 w-5" />
+            </div>
+            <div className="relative z-10 mb-1.5 text-[15px] font-semibold text-ink-1">{step.title}</div>
+            <div className="relative z-10 mb-4 text-[13px] leading-[1.6] text-ink-2">{step.body}</div>
+            <div className="relative z-10">
+              <StepVisual kind={step.visual} />
+            </div>
+          </div>
+        </motion.div>
+      ))}
     </div>
   );
 }
@@ -432,33 +715,13 @@ export default function LandingPage() {
         variants={staggerContainer}
         className="mx-auto max-w-[1080px] scroll-mt-24 px-6 pt-[140px]"
       >
-        <motion.div variants={fadeUp} className="mb-[46px] text-center">
+        <motion.div variants={fadeUp} className="mb-[56px] text-center">
           <div className="mb-2 text-[12px] font-bold uppercase tracking-[0.08em] text-brand-violet-light">
             How it works
           </div>
           <div className="font-display text-[32px] font-bold">From raw API to shipped dashboard</div>
         </motion.div>
-        <div className="relative grid grid-cols-1 gap-5 md:grid-cols-3">
-          <div className="absolute left-0 right-0 top-[52px] hidden h-px bg-gradient-to-r from-transparent via-border-strong to-transparent md:block" />
-          {STEPS.map((step) => (
-            <motion.div
-              key={step.n}
-              variants={fadeUp}
-              whileHover={{ y: -6 }}
-              transition={{ type: "spring", stiffness: 300, damping: 22 }}
-              className="relative rounded-xl border border-border-default bg-bg-1 p-6"
-            >
-              <div className="mb-3 flex items-center justify-between">
-                <div className="font-display text-[13px] font-bold text-brand-violet-light">{step.n}</div>
-                <div className="flex h-8 w-8 items-center justify-center rounded-md border border-brand-violet/30 bg-brand-violet/10 text-brand-violet-light">
-                  <step.icon className="h-4 w-4" />
-                </div>
-              </div>
-              <div className="mb-2 text-[15px] font-semibold text-ink-1">{step.title}</div>
-              <div className="text-[13px] leading-[1.6] text-ink-2">{step.body}</div>
-            </motion.div>
-          ))}
-        </div>
+        <HowItWorksTimeline />
       </motion.div>
 
       <motion.div
@@ -469,29 +732,27 @@ export default function LandingPage() {
         variants={staggerContainer}
         className="mx-auto max-w-[1080px] scroll-mt-24 px-6 pt-[140px]"
       >
-        <motion.div variants={fadeUp} className="mb-[46px] text-center">
+        <motion.div variants={fadeUp} className="mb-[56px] text-center">
           <div className="mb-2 text-[12px] font-bold uppercase tracking-[0.08em] text-brand-violet-light">
             Features
           </div>
           <div className="font-display text-[32px] font-bold">Everything a data product needs</div>
         </motion.div>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-6">
           {FEATURES.map((f) => (
-            <motion.div
-              key={f.title}
-              variants={fadeUp}
-              whileHover={{ y: -6, scale: 1.015 }}
-              transition={{ type: "spring", stiffness: 300, damping: 22 }}
-              className="rounded-xl border border-border-default bg-bg-1 p-5"
-            >
-              <div
-                className="mb-3.5 flex h-9 w-9 items-center justify-center rounded-md text-brand-violet-light"
-                style={{ background: "rgba(139,92,246,0.12)", border: "1px solid rgba(139,92,246,0.3)" }}
-              >
-                <f.icon className="h-4 w-4" />
-              </div>
-              <div className="mb-1.5 text-[14px] font-semibold text-ink-1">{f.title}</div>
-              <div className="text-[13px] leading-[1.6] text-ink-2">{f.body}</div>
+            <motion.div key={f.title} variants={fadeUp} className={f.span}>
+              <SpotlightCard className="h-full p-5">
+                <div
+                  className="mb-3.5 flex h-9 w-9 items-center justify-center rounded-md text-brand-violet-light"
+                  style={{ background: "rgba(139,92,246,0.12)", border: "1px solid rgba(139,92,246,0.3)" }}
+                >
+                  <f.icon className="h-4 w-4" />
+                </div>
+                <div className="mb-1.5 text-[14px] font-semibold text-ink-1">{f.title}</div>
+                <div className="text-[13px] leading-[1.6] text-ink-2">{f.body}</div>
+                <div className="flex-1" />
+                <FeatureVisual kind={f.visual} />
+              </SpotlightCard>
             </motion.div>
           ))}
         </div>
@@ -505,31 +766,49 @@ export default function LandingPage() {
         variants={staggerContainer}
         className="mx-auto max-w-[1080px] scroll-mt-24 px-6 pt-[140px]"
       >
-        <motion.div variants={fadeUp} className="mb-[46px] text-center">
+        <motion.div variants={fadeUp} className="mb-[56px] text-center">
           <div className="mb-2 text-[12px] font-bold uppercase tracking-[0.08em] text-brand-violet-light">
             Pricing
           </div>
           <div className="font-display text-[32px] font-bold">Start free, upgrade when you outgrow it</div>
         </motion.div>
-        <div className="grid grid-cols-2 gap-3.5 md:grid-cols-4">
-          {PLANS.map((pl, i) => (
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4 lg:items-center">
+          {PLANS.map((pl) => (
             <motion.div
               key={pl.name}
               variants={fadeUp}
-              whileHover={{ y: -6 }}
+              whileHover={{ y: pl.highlight ? -10 : -6 }}
               transition={{ type: "spring", stiffness: 300, damping: 22 }}
-              className="rounded-xl border p-[18px]"
+              className={cn("relative rounded-xl border p-6", pl.highlight ? "z-10 border-brand-violet lg:scale-[1.07]" : "border-border-default")}
               style={{
-                background: i === 1 ? "var(--color-surface-selected)" : "var(--color-bg-1)",
-                borderColor: i === 1 ? "var(--color-brand-violet)" : "var(--color-border-default)",
+                background: pl.highlight
+                  ? "linear-gradient(160deg, var(--color-surface-selected), var(--color-bg-1))"
+                  : "var(--color-bg-1)",
+                boxShadow: pl.highlight ? "0 24px 60px rgba(139,92,246,0.28)" : undefined,
               }}
             >
+              {pl.badge && (
+                <motion.div
+                  animate={{ y: [0, -4, 0] }}
+                  transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
+                  className="absolute -top-3.5 left-1/2 flex -translate-x-1/2 items-center gap-1 whitespace-nowrap rounded-full bg-gradient-to-r from-brand-violet to-brand-cyan px-3 py-1 text-[10px] font-bold text-white shadow-md"
+                >
+                  <Crown className="h-3 w-3" /> {pl.badge}
+                </motion.div>
+              )}
               <div className="text-[13px] font-bold text-ink-1">{pl.name}</div>
-              <div className="font-display my-2 text-[22px] font-extrabold text-ink-1">
+              <div className="mt-1 text-[11px] text-ink-3">{pl.tagline}</div>
+              <div className="font-display my-3 text-[28px] font-extrabold text-ink-1">
                 {pl.price}
                 {pl.price !== "Custom" && <span className="text-[12px] font-normal text-ink-3">/seat</span>}
               </div>
-              <div className="text-[11px] leading-[1.6] text-ink-2">{pl.limits}</div>
+              <div className="flex flex-col gap-2">
+                {pl.features.map((feat) => (
+                  <div key={feat} className="flex items-center gap-2 text-[12px] text-ink-2">
+                    <Check className="h-3.5 w-3.5 shrink-0 text-brand-green" /> {feat}
+                  </div>
+                ))}
+              </div>
             </motion.div>
           ))}
         </div>
