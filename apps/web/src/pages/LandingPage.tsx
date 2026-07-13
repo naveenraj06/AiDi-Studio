@@ -29,6 +29,7 @@ import {
   Wand2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ProductDemo } from "@/components/landing/ProductDemo";
 import { cn } from "@/lib/utils";
 
 const STEPS = [
@@ -526,6 +527,9 @@ export default function LandingPage() {
             <button onClick={() => scrollTo("how-it-works")} className="cursor-pointer text-[13px] text-ink-2 hover:text-ink-1">
               How it works
             </button>
+            <button onClick={() => scrollTo("demo")} className="cursor-pointer text-[13px] text-ink-2 hover:text-ink-1">
+              Live demo
+            </button>
             <button onClick={() => scrollTo("features")} className="cursor-pointer text-[13px] text-ink-2 hover:text-ink-1">
               Features
             </button>
@@ -724,6 +728,8 @@ export default function LandingPage() {
         <HowItWorksTimeline />
       </motion.div>
 
+      <ProductDemo />
+
       <motion.div
         id="features"
         initial="hidden"
@@ -850,6 +856,9 @@ export default function LandingPage() {
         <div className="flex gap-5">
           <button onClick={() => scrollTo("how-it-works")} className="cursor-pointer text-ink-3 hover:text-ink-2">
             How it works
+          </button>
+          <button onClick={() => scrollTo("demo")} className="cursor-pointer text-ink-3 hover:text-ink-2">
+            Live demo
           </button>
           <button onClick={() => scrollTo("features")} className="cursor-pointer text-ink-3 hover:text-ink-2">
             Features
