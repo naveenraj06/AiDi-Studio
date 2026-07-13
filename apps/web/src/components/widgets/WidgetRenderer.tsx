@@ -79,7 +79,7 @@ export function WidgetRenderer({ type, projectId, resourceId, mapping, ft = {}, 
           Live
         </div>
       )}
-      {renderWidget(type, rows, color, ft, projectId)}
+      {renderWidget(type, rows, color, ft, projectId, mapping)}
     </div>
   );
 }
@@ -90,6 +90,7 @@ function renderWidget(
   color: string,
   ft: Partial<WidgetFineTune>,
   projectId: string | null | undefined,
+  mapping: FieldMapping[] | null | undefined,
 ) {
   switch (type) {
     case "line":
@@ -105,6 +106,7 @@ function renderWidget(
         <ChartWidget
           chartKind={type}
           rows={rows}
+          mapping={mapping}
           color={color}
           showLegend={ft.showLegend ?? true}
           showPoints={ft.showPoints ?? true}

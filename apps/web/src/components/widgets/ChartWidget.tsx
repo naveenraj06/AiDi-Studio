@@ -25,15 +25,18 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type { ChartWidgetType } from "@/types";
+import { nameAxis } from "@aidi-studio/chart-utils";
+import type { ChartWidgetType, FieldMapping } from "@/types";
 import type { ShapedRow } from "@/lib/shapeWidgetData";
 
 const PALETTE = ["#8b5cf6", "#22d3ee", "#34d399", "#fbbf24", "#f87171", "#c084fc", "#fb923c"];
 const AXIS_STYLE = { fontSize: 10, fill: "var(--color-ink-3)" };
+const AXIS_TITLE_STYLE = { fontSize: 10, fill: "var(--color-ink-2)" };
 
 interface ChartWidgetProps {
   chartKind: ChartWidgetType;
   rows: ShapedRow[];
+  mapping?: FieldMapping[] | null;
   color?: string;
   showLegend?: boolean;
   showPoints?: boolean;
@@ -43,6 +46,17 @@ interface ChartWidgetProps {
   showAxisLabels?: boolean;
   smoothLine?: boolean;
   asPie?: boolean;
+}
+
+/** Human-readable axis titles derived from the resource fields mapped to x-axis/y-axis,
+ * e.g. "revenue_usd" -> "Revenue USD" — undefined (no title shown) when nothing is mapped. */
+function axisTitles(mapping: FieldMapping[] | null | undefined) {
+  const xField = mapping?.find((m) => m.role === "x-axis")?.field;
+  const yField = mapping?.find((m) => m.role === "y-axis")?.field;
+  return {
+    x: xField ? nameAxis(xField) : undefined,
+    y: yField ? nameAxis(yField) : undefined,
+  };
 }
 
 /** Pivots long-format {x-axis, y-axis, series} rows into one column per series, for stacked/grouped bars. */
@@ -66,6 +80,7 @@ function pivotBySeries(rows: ShapedRow[]) {
 export function ChartWidget({
   chartKind,
   rows,
+  mapping,
   color = "#8b5cf6",
   showLegend = true,
   showPoints = true,
@@ -81,16 +96,31 @@ export function ChartWidget({
   }
 
   const axisTick = showAxisLabels ? AXIS_STYLE : false;
+  const titles = showAxisLabels ? axisTitles(mapping) : { x: undefined, y: undefined };
+  // Label shape depends on which physical axis (horizontal vs vertical) it's attached to,
+  // not on which data role it carries — a horizontal bar chart's numeric axis renders along
+  // the bottom (y-axis role) while its category axis renders along the left (x-axis role).
+  const horizontalAxisLabel = (text: string | undefined) =>
+    text ? { value: text, position: "insideBottom" as const, offset: -2, style: AXIS_TITLE_STYLE } : undefined;
+  const verticalAxisLabel = (text: string | undefined) =>
+    text ? { value: text, angle: -90, position: "insideLeft" as const, style: AXIS_TITLE_STYLE } : undefined;
+  const xTitle = horizontalAxisLabel(titles.x);
+  const yTitle = verticalAxisLabel(titles.y);
+  // The default -20 left margin trims whitespace the y-axis doesn't need, but a rotated
+  // axis title needs that room back or it renders past the card's left edge and gets clipped.
+  const leftMargin = yTitle ? 0 : -20;
+  const yAxisWidth = yTitle ? 44 : 36;
+  const bottomMargin = xTitle ? 4 : 0;
 
   if (chartKind === "line" || chartKind === "area") {
     const Chart = chartKind === "line" ? LineChart : AreaChart;
     const curve = smoothLine ? "monotone" : "linear";
     return (
       <ResponsiveContainer width="100%" height="100%">
-        <Chart data={rows} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
+        <Chart data={rows} margin={{ top: 8, right: 8, left: leftMargin, bottom: bottomMargin }}>
           {showGrid && <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border-subtle)" vertical={false} />}
-          <XAxis dataKey="x-axis" tick={axisTick} axisLine={false} tickLine={false} />
-          <YAxis tick={axisTick} axisLine={false} tickLine={false} width={36} />
+          <XAxis dataKey="x-axis" tick={axisTick} axisLine={false} tickLine={false} label={xTitle} />
+          <YAxis tick={axisTick} axisLine={false} tickLine={false} width={yAxisWidth} label={yTitle} />
           {showTooltip && <Tooltip />}
           {chartKind === "line" ? (
             <Line type={curve} dataKey="y-axis" stroke={color} strokeWidth={2.5} dot={showPoints} />
@@ -104,25 +134,31 @@ export function ChartWidget({
 
   if (chartKind === "bar" || chartKind === "stacked-bar") {
     const { data, seriesKeys } = chartKind === "stacked-bar" ? pivotBySeries(rows) : { data: rows, seriesKeys: ["y-axis"] };
+    // Horizontal bars swap which role sits on which physical axis: the numeric y-axis role
+    // runs along the bottom and the categorical x-axis role runs along the left.
+    const barXTitle = horizontal ? horizontalAxisLabel(titles.y) : xTitle;
+    const barYTitle = horizontal ? verticalAxisLabel(titles.x) : yTitle;
+    const barLeftMargin = horizontal ? (barYTitle ? 8 : -12) : leftMargin;
+    const barYAxisWidth = horizontal ? 72 : yAxisWidth;
     return (
       <ResponsiveContainer width="100%" height="100%">
         <BarChart
           data={data}
           layout={horizontal ? "vertical" : "horizontal"}
-          margin={{ top: 8, right: 8, left: horizontal ? 8 : -20, bottom: 0 }}
+          margin={{ top: 8, right: 8, left: barLeftMargin, bottom: barXTitle ? 4 : 0 }}
         >
           {showGrid && (
             <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border-subtle)" horizontal={!horizontal} vertical={horizontal} />
           )}
           {horizontal ? (
             <>
-              <XAxis type="number" tick={axisTick} axisLine={false} tickLine={false} />
-              <YAxis dataKey="x-axis" type="category" tick={axisTick} axisLine={false} tickLine={false} width={72} />
+              <XAxis type="number" tick={axisTick} axisLine={false} tickLine={false} label={barXTitle} />
+              <YAxis dataKey="x-axis" type="category" tick={axisTick} axisLine={false} tickLine={false} width={barYAxisWidth} label={barYTitle} />
             </>
           ) : (
             <>
-              <XAxis dataKey="x-axis" tick={axisTick} axisLine={false} tickLine={false} />
-              <YAxis tick={axisTick} axisLine={false} tickLine={false} width={36} />
+              <XAxis dataKey="x-axis" tick={axisTick} axisLine={false} tickLine={false} label={barXTitle} />
+              <YAxis tick={axisTick} axisLine={false} tickLine={false} width={barYAxisWidth} label={barYTitle} />
             </>
           )}
           {showTooltip && <Tooltip />}
@@ -144,10 +180,10 @@ export function ChartWidget({
   if (chartKind === "scatter") {
     return (
       <ResponsiveContainer width="100%" height="100%">
-        <ScatterChart margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
+        <ScatterChart margin={{ top: 8, right: 8, left: leftMargin, bottom: bottomMargin }}>
           {showGrid && <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border-subtle)" />}
-          <XAxis dataKey="x-axis" tick={axisTick} axisLine={false} tickLine={false} />
-          <YAxis dataKey="y-axis" tick={axisTick} axisLine={false} tickLine={false} width={36} />
+          <XAxis dataKey="x-axis" tick={axisTick} axisLine={false} tickLine={false} label={xTitle} />
+          <YAxis dataKey="y-axis" tick={axisTick} axisLine={false} tickLine={false} width={yAxisWidth} label={yTitle} />
           {showTooltip && <Tooltip />}
           <Scatter data={rows} fill={color} />
         </ScatterChart>

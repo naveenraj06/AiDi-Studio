@@ -1,0 +1,1 @@
+export { nameAxis } from "./axisName";
