@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+apps/web/dist
+apps/api/dist
+
 # Backend env / generated
 apps/api/.env
 apps/api/generated
