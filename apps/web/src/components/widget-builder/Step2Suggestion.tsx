@@ -1,6 +1,7 @@
 import * as React from "react";
 import type { WidgetSuggestion, WidgetType } from "@/types";
 import { TYPE_ICON, TYPE_LABEL } from "@/components/widgets/widgetTypeMeta";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { TypePalette } from "@/components/widget-builder/TypePalette";
@@ -75,7 +76,7 @@ export function Step2Suggestion({
           <div className="mb-1 text-[14px] font-semibold text-ink-1">All component types</div>
           <div className="mb-[18px] text-[12px] text-ink-3">
             <span onClick={() => setBrowsingAll(false)} className="cursor-pointer font-semibold text-brand-violet-light underline">
-              ← Back to AI suggestion
+              ← Back to suggestion
             </span>
           </div>
           <TypePalette activeType={activeType} onPick={onPickAlternative} />
@@ -86,7 +87,12 @@ export function Step2Suggestion({
             <div className="mb-1 flex items-center gap-2.5">
               <div className="text-[26px]">{TYPE_ICON[suggestion!.suggestedType]}</div>
               <div>
-                <div className="text-[15px] font-bold text-ink-1">{TYPE_LABEL[activeType]}</div>
+                <div className="flex items-center gap-2">
+                  <div className="text-[15px] font-bold text-ink-1">{TYPE_LABEL[activeType]}</div>
+                  <Badge variant={suggestion!.usedAi ? "violet" : "neutral"}>
+                    {suggestion!.usedAi ? "AI suggestion" : "Rule-based"}
+                  </Badge>
+                </div>
                 <div className="text-[11px]" style={{ color: confidenceColor(suggestion!.confidence) }}>
                   {suggestion!.confidence}% confidence
                 </div>

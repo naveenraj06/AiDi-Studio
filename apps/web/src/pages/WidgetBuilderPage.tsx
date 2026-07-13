@@ -3,7 +3,7 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import type { ApiResource, FieldMapping, WidgetCategory, WidgetFineTune, WidgetSuggestion, WidgetType } from "@/types";
 import { useAuth } from "@/hooks/useAuth";
 import { useGetProjectQuery } from "@/store/api/projectsApi";
-import { useGetResourcesQuery } from "@/store/api/resourcesApi";
+import { useGetResourcesQuery, useSuggestWidgetMutation } from "@/store/api/resourcesApi";
 import { useCreateWidgetMutation, useGetWidgetsQuery, useUpdateWidgetMutation } from "@/store/api/widgetsApi";
 import { getErrorMessage } from "@/lib/errors";
 import { requiresResource } from "@/components/widgets/widgetTypeMeta";
@@ -34,6 +34,7 @@ export default function WidgetBuilderPage() {
   const { data: widgets, isLoading: widgetsLoading } = useGetWidgetsQuery(projectId ?? "", { skip: !projectId });
   const [createWidget] = useCreateWidgetMutation();
   const [updateWidget] = useUpdateWidgetMutation();
+  const [suggestWidget] = useSuggestWidgetMutation();
 
   const existingWidget = isEditing ? widgets?.find((w) => w.id === widgetId) : undefined;
   const widgetNotFound = isEditing && !widgetsLoading && !!widgets && !existingWidget;
@@ -77,17 +78,24 @@ export default function WidgetBuilderPage() {
 
   const updateFt = (patch: Partial<WidgetFineTune>) => setFt((prev) => ({ ...prev, ...patch }));
 
-  const runAnalysis = (resourceId: string) => {
+  const runAnalysis = async (resourceId: string) => {
     setAnalyzing(true);
-    const resource = resources?.find((r) => r.id === resourceId);
-    setTimeout(() => {
+    try {
+      const result = await suggestWidget({ projectId, id: resourceId }).unwrap();
+      setSuggestion(result);
+      setMapping(result.mapping);
+    } catch {
+      // Our own API is unreachable — fall back to the offline, name-keyword
+      // heuristic so the builder still produces something usable.
+      const resource = resources?.find((r) => r.id === resourceId);
       if (resource) {
         const result = suggestFor(resource);
         setSuggestion(result);
         setMapping(result.mapping);
       }
+    } finally {
       setAnalyzing(false);
-    }, 900);
+    }
   };
 
   const selectResource = (r: ApiResource) => {
@@ -102,7 +110,7 @@ export default function WidgetBuilderPage() {
     }
     setStep(2);
     setChosenTypeOverride(null);
-    runAnalysis(selectedResourceId);
+    void runAnalysis(selectedResourceId);
   };
 
   const skipToStep2 = () => {
@@ -113,7 +121,7 @@ export default function WidgetBuilderPage() {
   };
 
   const backToStep2 = () => {
-    if (!suggestion && selectedResourceId) runAnalysis(selectedResourceId);
+    if (!suggestion && selectedResourceId) void runAnalysis(selectedResourceId);
     setStep(2);
   };
 

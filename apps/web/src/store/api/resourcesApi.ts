@@ -1,7 +1,7 @@
 import { createApi } from "@reduxjs/toolkit/query/react";
 import { axiosBaseQuery } from "@/store/axiosBaseQuery";
 import { axiosClient } from "@/lib/axiosClient";
-import type { ApiResource, AuthType } from "@/types";
+import type { ApiResource, AuthType, WidgetSuggestion } from "@/types";
 
 export interface CreateResourceInput {
   name: string;
@@ -72,6 +72,13 @@ export const resourcesApi = createApi({
       query: ({ projectId, id }) => ({ url: `/projects/${projectId}/resources/${id}/data` }),
       transformResponse: (response: { data: unknown }) => response.data,
     }),
+    // AI-backed (Groq) widget-type + field-mapping suggestion, with a
+    // data-aware heuristic fallback server-side when no AI provider is
+    // configured or the call fails — see apps/api/src/lib/aiSuggest.ts.
+    suggestWidget: builder.mutation<WidgetSuggestion, { projectId: string; id: string }>({
+      query: ({ projectId, id }) => ({ url: `/projects/${projectId}/resources/${id}/suggest-widget`, method: "POST" }),
+      transformResponse: (response: { suggestion: WidgetSuggestion }) => response.suggestion,
+    }),
   }),
 });
 
@@ -82,4 +89,5 @@ export const {
   useDeleteResourceMutation,
   useTestResourceConnectionMutation,
   useGetResourceDataQuery,
+  useSuggestWidgetMutation,
 } = resourcesApi;

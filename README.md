@@ -120,22 +120,34 @@ access token, then call this API with it as `Authorization: Bearer <token>`.
 
 - `GET /auth/me` — echoes the verified Supabase user (id/email/name)
 - `GET|POST /projects`, `GET|PATCH|DELETE /projects/:id`
-- `GET|POST /projects/:projectId/resources`, `PATCH|DELETE /projects/:projectId/resources/:id`, `POST .../resources/:id/test-connection`, `GET .../resources/:id/data` (proxied live response, for widgets)
+- `GET|POST /projects/:projectId/resources`, `PATCH|DELETE /projects/:projectId/resources/:id`, `POST .../resources/:id/test-connection`, `GET .../resources/:id/data` (proxied live response, for widgets), `POST .../resources/:id/suggest-widget` (AI widget-type + field-mapping suggestion; see below)
 - `GET|POST /projects/:projectId/widgets`, `PATCH|DELETE /projects/:projectId/widgets/:id`, `POST .../widgets/:id/duplicate` (instantiate a template)
 - `GET|POST /projects/:projectId/dashboards`, `GET|PATCH|DELETE /projects/:projectId/dashboards/:id`, `PUT .../dashboards/:id/tiles`
 - `GET /public/dashboards/:slug` (published dashboards; `?password=` if share-protected)
 - `GET|POST /projects/:projectId/team`, `PATCH|DELETE /projects/:projectId/team/:id`
 - `GET|PATCH /projects/:projectId/billing`
 
+### AI widget suggestions
+
+`POST /projects/:projectId/resources/:id/suggest-widget` fetches a live
+sample of the resource and asks an LLM which widget type and field mapping
+fit it best (`apps/api/src/lib/aiSuggest.ts`). It's backed by
+[Groq](https://console.groq.com/keys) — a free-tier, OpenAI-compatible API
+that serves open-source models (Llama 3.3 by default), so there's no
+self-hosted inference server to run. Set `GROQ_API_KEY` (and optionally
+`GROQ_MODEL`) in `apps/api/.env` to enable it.
+
+Without a key — or if the call errors, times out, or returns a mapping that
+doesn't actually cover what the chosen widget type needs to render — it falls
+back automatically to a deterministic heuristic (`lib/heuristicSuggest.ts`)
+that inspects the real sample's field names and types (not just the
+resource's name). The response always includes `usedAi: boolean` so the
+builder UI can honestly label which path produced the suggestion.
+
 ### Out of scope for this milestone
 
 No Stripe integration (billing endpoints just persist plan/seat records), no
-TOTP/2FA, no LLM-backed widget suggestions — the frontend's `suggestFor.ts`
-heuristic isn't reproduced server-side. `apps/web/src/context/AppContext.tsx`
-is still on in-memory mock data and doesn't call Supabase or this API yet;
-wiring it up (installing `@supabase/supabase-js`, replacing the mock
-login/signup/session logic, and pointing CRUD actions at this API) is the
-next step.
+TOTP/2FA.
 
 ## Frontend (`apps/web`)
 

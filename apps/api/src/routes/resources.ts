@@ -3,6 +3,8 @@ import { z } from "zod";
 import { requireRole } from "../lib/authz.js";
 import { serializeResource, type ResourceRow } from "../lib/serialize.js";
 import { assertPublicHttpUrl } from "../lib/ssrfGuard.js";
+import { fetchResourceJson, ResourceFetchError } from "../lib/resourceFetch.js";
+import { suggestWidgetForResource } from "../lib/aiSuggest.js";
 import { supabase } from "../lib/supabase.js";
 import { parseBody } from "../lib/validate.js";
 
@@ -158,9 +160,7 @@ export default async function resourceRoutes(app: FastifyInstance) {
   );
 
   // Server-side proxy so widgets can bind to a resource's live response
-  // without ever putting auth_credential in the browser. Same fetch/SSRF
-  // posture as test-connection above, just returning the body instead of
-  // discarding it.
+  // without ever putting auth_credential in the browser.
   app.get(
     "/projects/:projectId/resources/:id/data",
     { preHandler: [requireRole("viewer", "projectId")] },
@@ -175,43 +175,44 @@ export default async function resourceRoutes(app: FastifyInstance) {
         .maybeSingle();
       if (fetchError || !resource) return reply.code(404).send({ error: "Resource not found" });
 
-      let url: URL;
       try {
-        url = assertPublicHttpUrl(resource.url);
+        const data = await fetchResourceJson(resource);
+        return reply.send({ data });
       } catch (err) {
-        return reply.code(400).send({ error: err instanceof Error ? err.message : "Invalid resource URL" });
-      }
-
-      const headers: Record<string, string> = { Accept: "application/json" };
-      if (resource.auth_type === "bearer" && resource.auth_credential) {
-        headers.Authorization = `Bearer ${resource.auth_credential}`;
-      } else if (resource.auth_type === "api_key" && resource.auth_credential) {
-        headers["X-API-Key"] = resource.auth_credential;
-      }
-
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 8000);
-      try {
-        const res = await fetch(url, { method: "GET", headers, signal: controller.signal });
-        clearTimeout(timeout);
-        if (!res.ok) return reply.code(502).send({ error: `Resource responded with ${res.status}` });
-
-        // Cap the response we forward on — this is for dashboard widgets, not
-        // bulk data export.
-        const text = await res.text();
-        if (text.length > 1_000_000) return reply.code(502).send({ error: "Resource response too large" });
-
-        let body: unknown;
-        try {
-          body = JSON.parse(text);
-        } catch {
-          return reply.code(502).send({ error: "Resource did not return valid JSON" });
-        }
-        return reply.send({ data: body });
-      } catch {
-        clearTimeout(timeout);
+        if (err instanceof ResourceFetchError) return reply.code(err.statusCode).send({ error: err.message });
         return reply.code(502).send({ error: "Failed to reach resource" });
       }
+    },
+  );
+
+  // Fetches a live sample and asks an LLM (falling back to a deterministic,
+  // data-aware heuristic — see lib/aiSuggest.ts) which widget type and field
+  // mapping best fit it. Tightly rate-limited since it can call a metered
+  // external API.
+  app.post(
+    "/projects/:projectId/resources/:id/suggest-widget",
+    { preHandler: [requireRole("viewer", "projectId")], config: { rateLimit: { max: 20, timeWindow: "1 minute" } } },
+    async (request, reply) => {
+      const { projectId, id } = request.params as { projectId: string; id: string };
+
+      const { data: resource, error: fetchError } = await supabase
+        .from("api_resources")
+        .select("name, url, auth_type, auth_credential")
+        .eq("id", id)
+        .eq("project_id", projectId)
+        .maybeSingle();
+      if (fetchError || !resource) return reply.code(404).send({ error: "Resource not found" });
+
+      let sample: unknown;
+      try {
+        sample = await fetchResourceJson(resource);
+      } catch (err) {
+        if (err instanceof ResourceFetchError) return reply.code(err.statusCode).send({ error: err.message });
+        return reply.code(502).send({ error: "Failed to reach resource" });
+      }
+
+      const suggestion = await suggestWidgetForResource(resource.name, sample);
+      return reply.send({ suggestion });
     },
   );
 }

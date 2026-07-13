@@ -5,10 +5,11 @@ import { CHART_TYPES, DATA_TYPES, METRIC_TYPES } from "@/components/widgets/widg
 // they're never a sensible "alternative" to a data-shape-based suggestion.
 const SUGGESTABLE_TYPES: WidgetType[] = [...CHART_TYPES, ...METRIC_TYPES, ...DATA_TYPES];
 
-// Deterministic stand-in for the AI Integration Spec (MASTER-SPEC.md §9):
-// component-type suggestion + field mapping from a resource's shape. A real
-// backend would call an LLM and fall back to this same rule-based logic on
-// timeout/failure.
+// Client-side last resort only: the real suggestion path is the backend's
+// POST /resources/:id/suggest-widget (AI-backed, with its own data-aware
+// heuristic fallback — see apps/api/src/lib/aiSuggest.ts). This purely
+// name-keyword version only runs if that request itself can't be reached
+// (e.g. the API is down), so the builder still produces something.
 function hashStr(s: string): number {
   let h = 0;
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
@@ -72,5 +73,5 @@ export function suggestFor(resource: ApiResource): WidgetSuggestion {
     role: roles[(h + i) % roles.length],
   }));
 
-  return { suggestedType: type, confidence, reasoning, alternatives, mapping };
+  return { suggestedType: type, confidence, reasoning, alternatives, mapping, usedAi: false };
 }

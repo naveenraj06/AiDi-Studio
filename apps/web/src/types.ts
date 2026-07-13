@@ -86,6 +86,8 @@ export interface WidgetSuggestion {
   reasoning: string;
   alternatives: WidgetType[];
   mapping: FieldMapping[];
+  /** True when a real LLM produced this suggestion; false when the deterministic fallback ran (e.g. no AI provider configured). */
+  usedAi: boolean;
 }
 
 /** A single sub-view embedded in a Tabs or Modal widget — its own mini widget config. */

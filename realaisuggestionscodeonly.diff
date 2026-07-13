@@ -1,0 +1,723 @@
+diff --git a/README.md b/README.md
+index 1a06403..e2fac57 100644
+--- a/README.md
++++ b/README.md
+@@ -120,22 +120,34 @@ access token, then call this API with it as `Authorization: Bearer <token>`.
+ 
+ - `GET /auth/me` — echoes the verified Supabase user (id/email/name)
+ - `GET|POST /projects`, `GET|PATCH|DELETE /projects/:id`
+-- `GET|POST /projects/:projectId/resources`, `PATCH|DELETE /projects/:projectId/resources/:id`, `POST .../resources/:id/test-connection`, `GET .../resources/:id/data` (proxied live response, for widgets)
++- `GET|POST /projects/:projectId/resources`, `PATCH|DELETE /projects/:projectId/resources/:id`, `POST .../resources/:id/test-connection`, `GET .../resources/:id/data` (proxied live response, for widgets), `POST .../resources/:id/suggest-widget` (AI widget-type + field-mapping suggestion; see below)
+ - `GET|POST /projects/:projectId/widgets`, `PATCH|DELETE /projects/:projectId/widgets/:id`, `POST .../widgets/:id/duplicate` (instantiate a template)
+ - `GET|POST /projects/:projectId/dashboards`, `GET|PATCH|DELETE /projects/:projectId/dashboards/:id`, `PUT .../dashboards/:id/tiles`
+ - `GET /public/dashboards/:slug` (published dashboards; `?password=` if share-protected)
+ - `GET|POST /projects/:projectId/team`, `PATCH|DELETE /projects/:projectId/team/:id`
+ - `GET|PATCH /projects/:projectId/billing`
+ 
++### AI widget suggestions
++
++`POST /projects/:projectId/resources/:id/suggest-widget` fetches a live
++sample of the resource and asks an LLM which widget type and field mapping
++fit it best (`apps/api/src/lib/aiSuggest.ts`). It's backed by
++[Groq](https://console.groq.com/keys) — a free-tier, OpenAI-compatible API
++that serves open-source models (Llama 3.3 by default), so there's no
++self-hosted inference server to run. Set `GROQ_API_KEY` (and optionally
++`GROQ_MODEL`) in `apps/api/.env` to enable it.
++
++Without a key — or if the call errors, times out, or returns a mapping that
++doesn't actually cover what the chosen widget type needs to render — it falls
++back automatically to a deterministic heuristic (`lib/heuristicSuggest.ts`)
++that inspects the real sample's field names and types (not just the
++resource's name). The response always includes `usedAi: boolean` so the
++builder UI can honestly label which path produced the suggestion.
++
+ ### Out of scope for this milestone
+ 
+ No Stripe integration (billing endpoints just persist plan/seat records), no
+-TOTP/2FA, no LLM-backed widget suggestions — the frontend's `suggestFor.ts`
+-heuristic isn't reproduced server-side. `apps/web/src/context/AppContext.tsx`
+-is still on in-memory mock data and doesn't call Supabase or this API yet;
+-wiring it up (installing `@supabase/supabase-js`, replacing the mock
+-login/signup/session logic, and pointing CRUD actions at this API) is the
+-next step.
++TOTP/2FA.
+ 
+ ## Frontend (`apps/web`)
+ 
+diff --git a/apps/api/.env.example b/apps/api/.env.example
+index 1f4955d..91f210f 100644
+--- a/apps/api/.env.example
++++ b/apps/api/.env.example
+@@ -9,3 +9,11 @@ SUPABASE_DB_URL=""
+ # supabase/migrations/*.sql — not read by the server itself.
+ # Project Settings > Database > Connection string > Transaction pooler.
+ # SUPABASE_DB_URL="postgresql://postgres.your-project-ref:PASSWORD@aws-0-region.pooler.supabase.com:6543/postgres"
++
++# Optional. Powers real AI widget suggestions in the builder (an open-source
++# model — Llama 3.3 by default — served free via Groq's OpenAI-compatible
++# API: https://console.groq.com/keys). Leave unset and the builder falls back
++# to a deterministic, data-aware heuristic — no error, just a less clever
++# suggestion (the UI labels which one ran).
++# GROQ_API_KEY="gsk_..."
++# GROQ_MODEL="llama-3.3-70b-versatile"
+diff --git a/apps/api/src/lib/aiSuggest.ts b/apps/api/src/lib/aiSuggest.ts
+new file mode 100644
+index 0000000..fb95332
+--- /dev/null
++++ b/apps/api/src/lib/aiSuggest.ts
+@@ -0,0 +1,116 @@
++import { z } from "zod";
++import { env } from "./env.js";
++import { WIDGET_TYPES } from "./widgetTypes.js";
++import { roleRequirementsGuide, satisfiesRoleRequirements } from "./widgetSuggestRoles.js";
++import { heuristicSuggest, type HeuristicSuggestion } from "./heuristicSuggest.js";
++
++const GROQ_CHAT_URL = "https://api.groq.com/openai/v1/chat/completions";
++
++export interface WidgetSuggestionResult extends HeuristicSuggestion {
++  /** True when this came from the LLM; false whenever the deterministic fallback ran. */
++  usedAi: boolean;
++}
++
++const aiResponseSchema = z.object({
++  suggestedType: z.enum(WIDGET_TYPES),
++  confidence: z.number().min(0).max(100),
++  reasoning: z.string().trim().min(1).max(400),
++  alternatives: z.array(z.enum(WIDGET_TYPES)).max(4),
++  mapping: z
++    .array(z.object({ field: z.string().trim().min(1), role: z.string().trim().min(1) }))
++    .max(8),
++});
++
++/** Keeps the sample small — this is a schema-shape hint for the model, not a data export. */
++function truncateSample(sample: unknown): unknown {
++  if (Array.isArray(sample)) return sample.slice(0, 5);
++  if (sample && typeof sample === "object") {
++    const out: Record<string, unknown> = {};
++    for (const [key, value] of Object.entries(sample as Record<string, unknown>)) {
++      out[key] = Array.isArray(value) ? value.slice(0, 5) : value;
++    }
++    return out;
++  }
++  return sample;
++}
++
++function buildPrompt(resourceName: string, sample: unknown) {
++  const system = `You are a dashboard widget recommendation engine for an API analytics product. Given an API resource's name and a sample of its real JSON response, pick the single best widget component type and a field mapping.
++
++Available component types: ${WIDGET_TYPES.join(", ")}.
++
++Each type expects specific mapping roles, using the resource's REAL field names — never invent a field name that isn't in the sample:
++${roleRequirementsGuide()}
++- any other type: leave mapping empty (it shows the raw fields as-is)
++
++Respond with ONLY a JSON object, no prose, matching exactly:
++{"suggestedType": "<one type from the list above>", "confidence": <integer 0-100>, "reasoning": "<one sentence, naming the actual field(s) you used>", "alternatives": [<0-3 other plausible types>], "mapping": [{"field": "<real field name from the sample>", "role": "<role from the guide above>"}]}`;
++
++  const user = `Resource name: ${resourceName}\n\nSample response (truncated):\n${JSON.stringify(truncateSample(sample)).slice(0, 4000)}`;
++
++  return { system, user };
++}
++
++async function callGroq(resourceName: string, sample: unknown): Promise<WidgetSuggestionResult> {
++  const { system, user } = buildPrompt(resourceName, sample);
++
++  const controller = new AbortController();
++  const timeout = setTimeout(() => controller.abort(), 10_000);
++  let res: Response;
++  try {
++    res = await fetch(GROQ_CHAT_URL, {
++      method: "POST",
++      headers: {
++        Authorization: `Bearer ${env.GROQ_API_KEY}`,
++        "Content-Type": "application/json",
++      },
++      body: JSON.stringify({
++        model: env.GROQ_MODEL,
++        messages: [
++          { role: "system", content: system },
++          { role: "user", content: user },
++        ],
++        response_format: { type: "json_object" },
++        temperature: 0.2,
++        max_tokens: 500,
++      }),
++      signal: controller.signal,
++    });
++  } finally {
++    clearTimeout(timeout);
++  }
++
++  if (!res.ok) throw new Error(`Groq responded with ${res.status}`);
++
++  const body = (await res.json()) as { choices?: { message?: { content?: string } }[] };
++  const content = body.choices?.[0]?.message?.content;
++  if (typeof content !== "string") throw new Error("Malformed Groq response");
++
++  const parsed = aiResponseSchema.parse(JSON.parse(content));
++
++  // A syntactically valid response can still be useless if the mapping
++  // doesn't actually cover what the chosen widget type needs to render.
++  if (!satisfiesRoleRequirements(parsed.suggestedType, parsed.mapping)) {
++    throw new Error("AI mapping missing required roles for its suggested type");
++  }
++
++  return { ...parsed, usedAi: true };
++}
++
++/**
++ * Real AI suggestion when GROQ_API_KEY is configured, with an automatic,
++ * silent fallback to the deterministic heuristic on any missing config,
++ * network failure, timeout, or invalid/unusable model output. Callers always
++ * get a usable suggestion; `usedAi` says which path produced it.
++ */
++export async function suggestWidgetForResource(resourceName: string, sample: unknown): Promise<WidgetSuggestionResult> {
++  if (!env.GROQ_API_KEY) {
++    return { ...heuristicSuggest(sample), usedAi: false };
++  }
++
++  try {
++    return await callGroq(resourceName, sample);
++  } catch {
++    return { ...heuristicSuggest(sample), usedAi: false };
++  }
++}
+diff --git a/apps/api/src/lib/env.ts b/apps/api/src/lib/env.ts
+index 170acb7..67160d3 100644
+--- a/apps/api/src/lib/env.ts
++++ b/apps/api/src/lib/env.ts
+@@ -7,6 +7,12 @@ const envSchema = z.object({
+   PORT: z.coerce.number().default(4000),
+   CORS_ORIGIN: z.string().default("http://localhost:5173"),
+   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
++  // Optional: powers real AI widget suggestions (see lib/aiSuggest.ts). Groq
++  // hosts open-source models (Llama, etc.) behind a free-tier, OpenAI-compatible
++  // API — no self-hosted inference server required. Suggestions fall back to a
++  // deterministic, data-aware heuristic whenever this is unset or a call fails.
++  GROQ_API_KEY: z.string().min(1).optional(),
++  GROQ_MODEL: z.string().default("llama-3.3-70b-versatile"),
+ });
+ 
+ export const env = envSchema.parse(process.env);
+diff --git a/apps/api/src/lib/heuristicSuggest.ts b/apps/api/src/lib/heuristicSuggest.ts
+new file mode 100644
+index 0000000..0a52848
+--- /dev/null
++++ b/apps/api/src/lib/heuristicSuggest.ts
+@@ -0,0 +1,118 @@
++import type { WidgetTypeValue } from "./widgetTypes.js";
++
++export interface HeuristicSuggestion {
++  suggestedType: WidgetTypeValue;
++  confidence: number;
++  reasoning: string;
++  alternatives: WidgetTypeValue[];
++  mapping: { field: string; role: string }[];
++}
++
++/** Finds the array-of-records worth charting inside an arbitrary API response. */
++function findRecords(raw: unknown): Record<string, unknown>[] {
++  if (Array.isArray(raw)) {
++    return raw.filter((r): r is Record<string, unknown> => typeof r === "object" && r !== null);
++  }
++  if (raw && typeof raw === "object") {
++    for (const value of Object.values(raw as Record<string, unknown>)) {
++      if (Array.isArray(value) && value.length > 0 && typeof value[0] === "object" && value[0] !== null) {
++        return value as Record<string, unknown>[];
++      }
++    }
++    return [raw as Record<string, unknown>];
++  }
++  return [];
++}
++
++function looksLikeDate(value: unknown): boolean {
++  if (typeof value !== "string") return false;
++  return /^\d{4}-\d{2}-\d{2}/.test(value) || (/[-/]/.test(value) && !Number.isNaN(Date.parse(value)));
++}
++
++function isNumeric(value: unknown): boolean {
++  if (typeof value === "number") return true;
++  return typeof value === "string" && value.trim() !== "" && !Number.isNaN(Number(value));
++}
++
++/**
++ * Deterministic fallback for when AI suggestions are unavailable or fail —
++ * inspects the REAL fetched sample's field names and types (not just the
++ * resource's name) to pick a widget type and a mapping that uses actual
++ * field names. Used directly when GROQ_API_KEY isn't set, and as the safety
++ * net when the AI call errors, times out, or returns something invalid.
++ */
++export function heuristicSuggest(sample: unknown): HeuristicSuggestion {
++  const records = findRecords(sample);
++  const first = records[0];
++
++  if (!first) {
++    return {
++      suggestedType: "table",
++      confidence: 40,
++      reasoning: "Couldn't find a usable record shape in the sample response.",
++      alternatives: ["list", "stat"],
++      mapping: [],
++    };
++  }
++
++  const fields = Object.keys(first);
++  const dateField = fields.find((f) => looksLikeDate(first[f]));
++  const numericFields = fields.filter((f) => f !== dateField && isNumeric(first[f]));
++  const labelField = fields.find((f) => f !== dateField && !numericFields.includes(f) && typeof first[f] === "string");
++
++  if (dateField && numericFields[0] && records.length > 1) {
++    return {
++      suggestedType: "line",
++      confidence: 74,
++      reasoning: `Detected a date-like field ("${dateField}") alongside a numeric field ("${numericFields[0]}") across ${records.length} records — a time series line chart best shows the trend.`,
++      alternatives: ["area", "bar"],
++      mapping: [
++        { field: dateField, role: "x-axis" },
++        { field: numericFields[0], role: "y-axis" },
++      ],
++    };
++  }
++
++  if (labelField && numericFields[0]) {
++    if (records.length <= 8) {
++      return {
++        suggestedType: "donut",
++        confidence: 68,
++        reasoning: `Detected a label field ("${labelField}") and a numeric field ("${numericFields[0]}") with ${records.length} records — a donut chart shows composition well at this size.`,
++        alternatives: ["bar", "table"],
++        mapping: [
++          { field: labelField, role: "label" },
++          { field: numericFields[0], role: "value" },
++        ],
++      };
++    }
++    return {
++      suggestedType: "bar",
++      confidence: 70,
++      reasoning: `Detected a categorical field ("${labelField}") paired with a numeric field ("${numericFields[0]}") across ${records.length} records — a bar chart compares them clearly.`,
++      alternatives: ["table", "list"],
++      mapping: [
++        { field: labelField, role: "x-axis" },
++        { field: numericFields[0], role: "y-axis" },
++      ],
++    };
++  }
++
++  if (records.length === 1 && numericFields[0]) {
++    return {
++      suggestedType: "stat",
++      confidence: 65,
++      reasoning: `Response is a single record with a numeric field ("${numericFields[0]}") and no time dimension — a stat card highlights the headline number.`,
++      alternatives: ["gauge", "progress"],
++      mapping: [{ field: numericFields[0], role: "value" }],
++    };
++  }
++
++  return {
++    suggestedType: "table",
++    confidence: 55,
++    reasoning: "Response is a set of records without an obvious chart shape — a table gives the most faithful view of every field.",
++    alternatives: ["list", "bar"],
++    mapping: [],
++  };
++}
+diff --git a/apps/api/src/lib/resourceFetch.ts b/apps/api/src/lib/resourceFetch.ts
+new file mode 100644
+index 0000000..e1ee551
+--- /dev/null
++++ b/apps/api/src/lib/resourceFetch.ts
+@@ -0,0 +1,61 @@
++import { assertPublicHttpUrl } from "./ssrfGuard.js";
++
++export interface ResourceCredentials {
++  url: string;
++  auth_type: string;
++  auth_credential: string | null;
++}
++
++export class ResourceFetchError extends Error {
++  constructor(
++    public statusCode: number,
++    message: string,
++  ) {
++    super(message);
++  }
++}
++
++/**
++ * Fetches a resource's live JSON response server-side, with credentials
++ * injected and never exposed to the browser. Shared by the raw data proxy
++ * (widgets binding to live data) and the AI suggestion endpoint (which needs
++ * a real sample to reason about).
++ */
++export async function fetchResourceJson(resource: ResourceCredentials): Promise<unknown> {
++  let url: URL;
++  try {
++    url = assertPublicHttpUrl(resource.url);
++  } catch (err) {
++    throw new ResourceFetchError(400, err instanceof Error ? err.message : "Invalid resource URL");
++  }
++
++  const headers: Record<string, string> = { Accept: "application/json" };
++  if (resource.auth_type === "bearer" && resource.auth_credential) {
++    headers.Authorization = `Bearer ${resource.auth_credential}`;
++  } else if (resource.auth_type === "api_key" && resource.auth_credential) {
++    headers["X-API-Key"] = resource.auth_credential;
++  }
++
++  const controller = new AbortController();
++  const timeout = setTimeout(() => controller.abort(), 8000);
++  let res: Response;
++  try {
++    res = await fetch(url, { method: "GET", headers, signal: controller.signal });
++  } catch {
++    throw new ResourceFetchError(502, "Failed to reach resource");
++  } finally {
++    clearTimeout(timeout);
++  }
++
++  if (!res.ok) throw new ResourceFetchError(502, `Resource responded with ${res.status}`);
++
++  // Cap the response we read — this is for dashboard widgets, not bulk data export.
++  const text = await res.text();
++  if (text.length > 1_000_000) throw new ResourceFetchError(502, "Resource response too large");
++
++  try {
++    return JSON.parse(text);
++  } catch {
++    throw new ResourceFetchError(502, "Resource did not return valid JSON");
++  }
++}
+diff --git a/apps/api/src/lib/widgetSuggestRoles.ts b/apps/api/src/lib/widgetSuggestRoles.ts
+new file mode 100644
+index 0000000..1d86512
+--- /dev/null
++++ b/apps/api/src/lib/widgetSuggestRoles.ts
+@@ -0,0 +1,51 @@
++import type { WidgetTypeValue } from "./widgetTypes.js";
++
++/**
++ * Mapping roles each resource-bound widget type expects — the same role
++ * vocabulary the frontend's shapeWidgetRows/ChartWidget/MetricWidget/etc.
++ * read from (x-axis, y-axis, label, value, series, lat, lon, date). A
++ * suggestion whose mapping doesn't cover these roles would render blank even
++ * though it's syntactically valid JSON, so this doubles as the contract we
++ * validate AI output against.
++ */
++export const ROLE_REQUIREMENTS: Record<WidgetTypeValue, string[]> = {
++  line: ["x-axis", "y-axis"],
++  area: ["x-axis", "y-axis"],
++  bar: ["x-axis", "y-axis"],
++  "stacked-bar": ["x-axis", "y-axis", "series"],
++  donut: ["label", "value"],
++  scatter: ["x-axis", "y-axis"],
++  radar: ["x-axis", "y-axis"],
++  treemap: ["label", "value"],
++  funnel: ["label", "value"],
++  stat: ["value"],
++  gauge: ["value"],
++  sparkline: ["y-axis"],
++  progress: ["value"],
++  table: [],
++  list: [],
++  "calendar-heatmap": ["date", "value"],
++  map: ["label", "lat", "lon", "value"],
++  text: [],
++  image: [],
++  divider: [],
++  button: [],
++  tabs: [],
++  modal: [],
++  container: [],
++};
++
++export function roleRequirementsGuide(): string {
++  return Object.entries(ROLE_REQUIREMENTS)
++    .filter(([, roles]) => roles.length > 0)
++    .map(([type, roles]) => `- ${type}: ${roles.join(", ")}`)
++    .join("\n");
++}
++
++/** True if a mapping's roles cover every role a type requires to render. */
++export function satisfiesRoleRequirements(type: WidgetTypeValue, mapping: { role: string }[]): boolean {
++  const required = ROLE_REQUIREMENTS[type] ?? [];
++  if (required.length === 0) return true;
++  const got = new Set(mapping.map((m) => m.role));
++  return required.every((role) => got.has(role));
++}
+diff --git a/apps/api/src/routes/resources.ts b/apps/api/src/routes/resources.ts
+index ce5fd1a..c6a5f57 100644
+--- a/apps/api/src/routes/resources.ts
++++ b/apps/api/src/routes/resources.ts
+@@ -3,6 +3,8 @@ import { z } from "zod";
+ import { requireRole } from "../lib/authz.js";
+ import { serializeResource, type ResourceRow } from "../lib/serialize.js";
+ import { assertPublicHttpUrl } from "../lib/ssrfGuard.js";
++import { fetchResourceJson, ResourceFetchError } from "../lib/resourceFetch.js";
++import { suggestWidgetForResource } from "../lib/aiSuggest.js";
+ import { supabase } from "../lib/supabase.js";
+ import { parseBody } from "../lib/validate.js";
+ 
+@@ -158,9 +160,7 @@ export default async function resourceRoutes(app: FastifyInstance) {
+   );
+ 
+   // Server-side proxy so widgets can bind to a resource's live response
+-  // without ever putting auth_credential in the browser. Same fetch/SSRF
+-  // posture as test-connection above, just returning the body instead of
+-  // discarding it.
++  // without ever putting auth_credential in the browser.
+   app.get(
+     "/projects/:projectId/resources/:id/data",
+     { preHandler: [requireRole("viewer", "projectId")] },
+@@ -175,43 +175,44 @@ export default async function resourceRoutes(app: FastifyInstance) {
+         .maybeSingle();
+       if (fetchError || !resource) return reply.code(404).send({ error: "Resource not found" });
+ 
+-      let url: URL;
+       try {
+-        url = assertPublicHttpUrl(resource.url);
++        const data = await fetchResourceJson(resource);
++        return reply.send({ data });
+       } catch (err) {
+-        return reply.code(400).send({ error: err instanceof Error ? err.message : "Invalid resource URL" });
++        if (err instanceof ResourceFetchError) return reply.code(err.statusCode).send({ error: err.message });
++        return reply.code(502).send({ error: "Failed to reach resource" });
+       }
++    },
++  );
+ 
+-      const headers: Record<string, string> = { Accept: "application/json" };
+-      if (resource.auth_type === "bearer" && resource.auth_credential) {
+-        headers.Authorization = `Bearer ${resource.auth_credential}`;
+-      } else if (resource.auth_type === "api_key" && resource.auth_credential) {
+-        headers["X-API-Key"] = resource.auth_credential;
+-      }
++  // Fetches a live sample and asks an LLM (falling back to a deterministic,
++  // data-aware heuristic — see lib/aiSuggest.ts) which widget type and field
++  // mapping best fit it. Tightly rate-limited since it can call a metered
++  // external API.
++  app.post(
++    "/projects/:projectId/resources/:id/suggest-widget",
++    { preHandler: [requireRole("viewer", "projectId")], config: { rateLimit: { max: 20, timeWindow: "1 minute" } } },
++    async (request, reply) => {
++      const { projectId, id } = request.params as { projectId: string; id: string };
+ 
+-      const controller = new AbortController();
+-      const timeout = setTimeout(() => controller.abort(), 8000);
++      const { data: resource, error: fetchError } = await supabase
++        .from("api_resources")
++        .select("name, url, auth_type, auth_credential")
++        .eq("id", id)
++        .eq("project_id", projectId)
++        .maybeSingle();
++      if (fetchError || !resource) return reply.code(404).send({ error: "Resource not found" });
++
++      let sample: unknown;
+       try {
+-        const res = await fetch(url, { method: "GET", headers, signal: controller.signal });
+-        clearTimeout(timeout);
+-        if (!res.ok) return reply.code(502).send({ error: `Resource responded with ${res.status}` });
+-
+-        // Cap the response we forward on — this is for dashboard widgets, not
+-        // bulk data export.
+-        const text = await res.text();
+-        if (text.length > 1_000_000) return reply.code(502).send({ error: "Resource response too large" });
+-
+-        let body: unknown;
+-        try {
+-          body = JSON.parse(text);
+-        } catch {
+-          return reply.code(502).send({ error: "Resource did not return valid JSON" });
+-        }
+-        return reply.send({ data: body });
+-      } catch {
+-        clearTimeout(timeout);
++        sample = await fetchResourceJson(resource);
++      } catch (err) {
++        if (err instanceof ResourceFetchError) return reply.code(err.statusCode).send({ error: err.message });
+         return reply.code(502).send({ error: "Failed to reach resource" });
+       }
++
++      const suggestion = await suggestWidgetForResource(resource.name, sample);
++      return reply.send({ suggestion });
+     },
+   );
+ }
+diff --git a/apps/web/src/components/widget-builder/Step2Suggestion.tsx b/apps/web/src/components/widget-builder/Step2Suggestion.tsx
+index d0105ae..cbd5322 100644
+--- a/apps/web/src/components/widget-builder/Step2Suggestion.tsx
++++ b/apps/web/src/components/widget-builder/Step2Suggestion.tsx
+@@ -1,6 +1,7 @@
+ import * as React from "react";
+ import type { WidgetSuggestion, WidgetType } from "@/types";
+ import { TYPE_ICON, TYPE_LABEL } from "@/components/widgets/widgetTypeMeta";
++import { Badge } from "@/components/ui/badge";
+ import { Button } from "@/components/ui/button";
+ import { Card } from "@/components/ui/card";
+ import { TypePalette } from "@/components/widget-builder/TypePalette";
+@@ -75,7 +76,7 @@ export function Step2Suggestion({
+           <div className="mb-1 text-[14px] font-semibold text-ink-1">All component types</div>
+           <div className="mb-[18px] text-[12px] text-ink-3">
+             <span onClick={() => setBrowsingAll(false)} className="cursor-pointer font-semibold text-brand-violet-light underline">
+-              ← Back to AI suggestion
++              ← Back to suggestion
+             </span>
+           </div>
+           <TypePalette activeType={activeType} onPick={onPickAlternative} />
+@@ -86,7 +87,12 @@ export function Step2Suggestion({
+             <div className="mb-1 flex items-center gap-2.5">
+               <div className="text-[26px]">{TYPE_ICON[suggestion!.suggestedType]}</div>
+               <div>
+-                <div className="text-[15px] font-bold text-ink-1">{TYPE_LABEL[activeType]}</div>
++                <div className="flex items-center gap-2">
++                  <div className="text-[15px] font-bold text-ink-1">{TYPE_LABEL[activeType]}</div>
++                  <Badge variant={suggestion!.usedAi ? "violet" : "neutral"}>
++                    {suggestion!.usedAi ? "AI suggestion" : "Rule-based"}
++                  </Badge>
++                </div>
+                 <div className="text-[11px]" style={{ color: confidenceColor(suggestion!.confidence) }}>
+                   {suggestion!.confidence}% confidence
+                 </div>
+diff --git a/apps/web/src/components/widget-builder/suggestFor.ts b/apps/web/src/components/widget-builder/suggestFor.ts
+index decc382..590bff85 100644
+--- a/apps/web/src/components/widget-builder/suggestFor.ts
++++ b/apps/web/src/components/widget-builder/suggestFor.ts
+@@ -5,10 +5,11 @@ import { CHART_TYPES, DATA_TYPES, METRIC_TYPES } from "@/components/widgets/widg
+ // they're never a sensible "alternative" to a data-shape-based suggestion.
+ const SUGGESTABLE_TYPES: WidgetType[] = [...CHART_TYPES, ...METRIC_TYPES, ...DATA_TYPES];
+ 
+-// Deterministic stand-in for the AI Integration Spec (MASTER-SPEC.md §9):
+-// component-type suggestion + field mapping from a resource's shape. A real
+-// backend would call an LLM and fall back to this same rule-based logic on
+-// timeout/failure.
++// Client-side last resort only: the real suggestion path is the backend's
++// POST /resources/:id/suggest-widget (AI-backed, with its own data-aware
++// heuristic fallback — see apps/api/src/lib/aiSuggest.ts). This purely
++// name-keyword version only runs if that request itself can't be reached
++// (e.g. the API is down), so the builder still produces something.
+ function hashStr(s: string): number {
+   let h = 0;
+   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+@@ -72,5 +73,5 @@ export function suggestFor(resource: ApiResource): WidgetSuggestion {
+     role: roles[(h + i) % roles.length],
+   }));
+ 
+-  return { suggestedType: type, confidence, reasoning, alternatives, mapping };
++  return { suggestedType: type, confidence, reasoning, alternatives, mapping, usedAi: false };
+ }
+diff --git a/apps/web/src/pages/WidgetBuilderPage.tsx b/apps/web/src/pages/WidgetBuilderPage.tsx
+index a0d4925..e2b96d1 100644
+--- a/apps/web/src/pages/WidgetBuilderPage.tsx
++++ b/apps/web/src/pages/WidgetBuilderPage.tsx
+@@ -3,7 +3,7 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+ import type { ApiResource, FieldMapping, WidgetCategory, WidgetFineTune, WidgetSuggestion, WidgetType } from "@/types";
+ import { useAuth } from "@/hooks/useAuth";
+ import { useGetProjectQuery } from "@/store/api/projectsApi";
+-import { useGetResourcesQuery } from "@/store/api/resourcesApi";
++import { useGetResourcesQuery, useSuggestWidgetMutation } from "@/store/api/resourcesApi";
+ import { useCreateWidgetMutation, useGetWidgetsQuery, useUpdateWidgetMutation } from "@/store/api/widgetsApi";
+ import { getErrorMessage } from "@/lib/errors";
+ import { requiresResource } from "@/components/widgets/widgetTypeMeta";
+@@ -34,6 +34,7 @@ export default function WidgetBuilderPage() {
+   const { data: widgets, isLoading: widgetsLoading } = useGetWidgetsQuery(projectId ?? "", { skip: !projectId });
+   const [createWidget] = useCreateWidgetMutation();
+   const [updateWidget] = useUpdateWidgetMutation();
++  const [suggestWidget] = useSuggestWidgetMutation();
+ 
+   const existingWidget = isEditing ? widgets?.find((w) => w.id === widgetId) : undefined;
+   const widgetNotFound = isEditing && !widgetsLoading && !!widgets && !existingWidget;
+@@ -77,17 +78,24 @@ export default function WidgetBuilderPage() {
+ 
+   const updateFt = (patch: Partial<WidgetFineTune>) => setFt((prev) => ({ ...prev, ...patch }));
+ 
+-  const runAnalysis = (resourceId: string) => {
++  const runAnalysis = async (resourceId: string) => {
+     setAnalyzing(true);
+-    const resource = resources?.find((r) => r.id === resourceId);
+-    setTimeout(() => {
++    try {
++      const result = await suggestWidget({ projectId, id: resourceId }).unwrap();
++      setSuggestion(result);
++      setMapping(result.mapping);
++    } catch {
++      // Our own API is unreachable — fall back to the offline, name-keyword
++      // heuristic so the builder still produces something usable.
++      const resource = resources?.find((r) => r.id === resourceId);
+       if (resource) {
+         const result = suggestFor(resource);
+         setSuggestion(result);
+         setMapping(result.mapping);
+       }
++    } finally {
+       setAnalyzing(false);
+-    }, 900);
++    }
+   };
+ 
+   const selectResource = (r: ApiResource) => {
+@@ -102,7 +110,7 @@ export default function WidgetBuilderPage() {
+     }
+     setStep(2);
+     setChosenTypeOverride(null);
+-    runAnalysis(selectedResourceId);
++    void runAnalysis(selectedResourceId);
+   };
+ 
+   const skipToStep2 = () => {
+@@ -113,7 +121,7 @@ export default function WidgetBuilderPage() {
+   };
+ 
+   const backToStep2 = () => {
+-    if (!suggestion && selectedResourceId) runAnalysis(selectedResourceId);
++    if (!suggestion && selectedResourceId) void runAnalysis(selectedResourceId);
+     setStep(2);
+   };
+ 
+diff --git a/apps/web/src/store/api/resourcesApi.ts b/apps/web/src/store/api/resourcesApi.ts
+index f27e2b3..8d61453 100644
+--- a/apps/web/src/store/api/resourcesApi.ts
++++ b/apps/web/src/store/api/resourcesApi.ts
+@@ -1,7 +1,7 @@
+ import { createApi } from "@reduxjs/toolkit/query/react";
+ import { axiosBaseQuery } from "@/store/axiosBaseQuery";
+ import { axiosClient } from "@/lib/axiosClient";
+-import type { ApiResource, AuthType } from "@/types";
++import type { ApiResource, AuthType, WidgetSuggestion } from "@/types";
+ 
+ export interface CreateResourceInput {
+   name: string;
+@@ -72,6 +72,13 @@ export const resourcesApi = createApi({
+       query: ({ projectId, id }) => ({ url: `/projects/${projectId}/resources/${id}/data` }),
+       transformResponse: (response: { data: unknown }) => response.data,
+     }),
++    // AI-backed (Groq) widget-type + field-mapping suggestion, with a
++    // data-aware heuristic fallback server-side when no AI provider is
++    // configured or the call fails — see apps/api/src/lib/aiSuggest.ts.
++    suggestWidget: builder.mutation<WidgetSuggestion, { projectId: string; id: string }>({
++      query: ({ projectId, id }) => ({ url: `/projects/${projectId}/resources/${id}/suggest-widget`, method: "POST" }),
++      transformResponse: (response: { suggestion: WidgetSuggestion }) => response.suggestion,
++    }),
+   }),
+ });
+ 
+@@ -82,4 +89,5 @@ export const {
+   useDeleteResourceMutation,
+   useTestResourceConnectionMutation,
+   useGetResourceDataQuery,
++  useSuggestWidgetMutation,
+ } = resourcesApi;
+diff --git a/apps/web/src/types.ts b/apps/web/src/types.ts
+index 8131991..fc1d44e 100644
+--- a/apps/web/src/types.ts
++++ b/apps/web/src/types.ts
+@@ -86,6 +86,8 @@ export interface WidgetSuggestion {
+   reasoning: string;
+   alternatives: WidgetType[];
+   mapping: FieldMapping[];
++  /** True when a real LLM produced this suggestion; false when the deterministic fallback ran (e.g. no AI provider configured). */
++  usedAi: boolean;
+ }
+ 
+ /** A single sub-view embedded in a Tabs or Modal widget — its own mini widget config. */
