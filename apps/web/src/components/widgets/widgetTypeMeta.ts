@@ -37,7 +37,12 @@ export interface WidgetTypeGroup {
 
 export const WIDGET_GROUPS: WidgetTypeGroup[] = [
   { id: "charts", label: "Charts", description: "Trends, comparisons, and composition", types: CHART_TYPES },
-  { id: "metrics", label: "Metrics", description: "Single-value KPIs and progress", types: METRIC_TYPES },
+  {
+    id: "metrics",
+    label: "Metrics",
+    description: "Single-value KPIs with trend indicators and footer stats",
+    types: METRIC_TYPES,
+  },
   { id: "data", label: "Data", description: "Tables, lists, maps, and calendars", types: DATA_TYPES },
   { id: "layout", label: "Layout", description: "Structure and static content — not resource-bound", types: LAYOUT_TYPES },
 ];

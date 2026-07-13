@@ -1,6 +1,7 @@
 import * as React from "react";
 import { useNavigate } from "react-router-dom";
 import {
+  AnimatePresence,
   motion,
   useMotionTemplate,
   useMotionValue,
@@ -14,8 +15,12 @@ import {
   BarChart3,
   Boxes,
   Check,
+  ChevronDown,
   CircleDot,
+  CreditCard,
   Crown,
+  Database,
+  GitBranch,
   Grid3x3,
   KeyRound,
   LineChart,
@@ -24,17 +29,22 @@ import {
   Plug,
   Share2,
   ShieldCheck,
+  SlidersHorizontal,
   Sparkles,
   Users,
   Wand2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { ProductDemo } from "@/components/landing/ProductDemo";
 import { WidgetSampleCard } from "@/components/widgets/WidgetSampleCard";
-import type { WidgetType } from "@/types";
+import { WIDGET_GROUPS } from "@/components/widgets/widgetTypeMeta";
 import { cn } from "@/lib/utils";
-
-const SHOWCASE_TYPES: WidgetType[] = ["line", "bar", "donut", "gauge", "table", "map", "progress", "tabs"];
 
 const STEPS = [
   {
@@ -100,8 +110,15 @@ const FEATURES = [
     icon: Boxes,
     title: "Embed anywhere",
     body: "Every published dashboard ships with an iframe snippet and a raw JSON API, so you can drop live data into your own app or docs.",
-    span: "lg:col-span-6",
+    span: "lg:col-span-3",
     visual: "embed" as const,
+  },
+  {
+    icon: SlidersHorizontal,
+    title: "Configure every detail",
+    body: "Tooltips, legends, gridlines, trend captions, row striping — every component exposes the settings that matter for it, right in the builder.",
+    span: "lg:col-span-3",
+    visual: "customize" as const,
   },
 ];
 
@@ -224,6 +241,54 @@ function FloatingChip({
   );
 }
 
+interface ConnectionChipData {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  status: string;
+  color: string;
+  className: string;
+  delay: number;
+  depth: number;
+}
+
+/** The actual kinds of resources AiDi connects to — echoes the hero headline
+ * ("Connect any API") instead of generic decoration. */
+const CONNECTION_CHIPS: ConnectionChipData[] = [
+  { icon: CreditCard, label: "Stripe", status: "Synced", color: "#8b5cf6", className: "left-[2%] top-[6%]", delay: 0, depth: 60 },
+  { icon: GitBranch, label: "GitHub", status: "Synced", color: "#22d3ee", className: "right-[4%] top-[2%]", delay: 0.35, depth: 90 },
+  { icon: Database, label: "Postgres", status: "Live", color: "#34d399", className: "left-[0%] top-[52%]", delay: 0.7, depth: 40 },
+  { icon: Plug, label: "REST API", status: "Connected", color: "#f472b6", className: "right-[1%] top-[46%]", delay: 1.05, depth: 70 },
+];
+
+/** A floating "connected resource" chip — icon, resource name, and a pulsing live dot —
+ * scattered around the hero to make good on "Connect any API" instead of decorating with
+ * unrelated logos. */
+function ConnectionChip({ icon: Icon, label, status, color, className, delay, depth }: ConnectionChipData) {
+  return (
+    <FloatingChip delay={delay} depth={depth} className={cn("absolute hidden lg:flex", className)}>
+      <div className="flex items-center gap-2 rounded-full border border-border-strong bg-bg-1 py-2 pl-2 pr-3 shadow-lg">
+        <div
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
+          style={{ background: `${color}22`, color }}
+        >
+          <Icon className="h-3.5 w-3.5" />
+        </div>
+        <div className="flex flex-col leading-tight">
+          <span className="text-[11px] font-semibold text-ink-1">{label}</span>
+          <span className="flex items-center gap-1 text-[9px] text-brand-green">
+            <motion.span
+              animate={{ opacity: [1, 0.3, 1] }}
+              transition={{ duration: 1.6, repeat: Infinity, ease: "easeInOut" }}
+              className="h-1.5 w-1.5 rounded-full bg-brand-green"
+            />
+            {status}
+          </span>
+        </div>
+      </div>
+    </FloatingChip>
+  );
+}
+
 /** Cursor-follow glow wrapper for grid tiles — a lighter, non-rotating sibling of TiltCard. */
 function SpotlightCard({
   children,
@@ -321,10 +386,43 @@ function StepVisual({ kind }: { kind: "connect" | "suggest" | "publish" }) {
   );
 }
 
-function FeatureVisual({ kind }: { kind: "suggest" | "shield" | "stack" | "avatars" | "lock" | "embed" }) {
+function FeatureVisual({ kind }: { kind: "suggest" | "shield" | "stack" | "avatars" | "lock" | "embed" | "customize" }) {
+  if (kind === "customize") {
+    return (
+      <div className="mt-5 flex flex-col gap-2">
+        {["Show tooltip", "Show legend", "Striped rows"].map((label, i) => (
+          <div key={label} className="flex items-center justify-between rounded-lg border border-border-subtle bg-surface-sunken px-3 py-2">
+            <span className="text-[11px] text-ink-2">{label}</span>
+            <div
+              className={cn("h-4 w-7 rounded-full p-0.5 transition-colors", i < 2 ? "bg-brand-violet" : "bg-border-strong")}
+            >
+              <motion.div
+                className="h-3 w-3 rounded-full bg-white"
+                animate={{ x: i < 2 ? 12 : 0 }}
+                transition={{ type: "spring", stiffness: 300, damping: 24 }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
   if (kind === "suggest") {
     return (
-      <div className="mt-5 rounded-lg border border-border-subtle bg-surface-sunken p-4">
+      <div className="relative mt-5 rounded-lg border border-border-subtle bg-surface-sunken p-4">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.85 }}
+          whileInView={{ opacity: 1, scale: 1, y: [0, -6, 0] }}
+          viewport={{ once: true }}
+          transition={{
+            opacity: { duration: 0.5, delay: 0.6 },
+            scale: { duration: 0.5, delay: 0.6 },
+            y: { duration: 3.5, delay: 1, repeat: Infinity, ease: "easeInOut" },
+          }}
+          className="absolute -top-3 right-3 flex items-center gap-1 rounded-full border border-brand-green/30 bg-bg-1 px-2.5 py-1 text-[10px] font-bold text-brand-green shadow-md"
+        >
+          <Check className="h-3 w-3" /> 92% match
+        </motion.div>
         <svg width="100%" height="110" viewBox="0 0 400 110" preserveAspectRatio="none">
           <motion.polyline
             points="0,90 50,70 100,78 150,45 200,55 250,25 300,38 350,15 400,28"
@@ -420,6 +518,48 @@ function FeatureVisual({ kind }: { kind: "suggest" | "shield" | "stack" | "avata
   );
 }
 
+/** Tab-switched real component previews — a black-active-pill tab bar over a crossfading
+ * grid, in the spirit of Kissflow's Workflows/Integrations/Apps showcase. */
+function ComponentShowcase() {
+  const [active, setActive] = React.useState(WIDGET_GROUPS[0].id);
+  const group = WIDGET_GROUPS.find((g) => g.id === active) ?? WIDGET_GROUPS[0];
+
+  return (
+    <div>
+      <div className="mb-8 flex flex-wrap justify-center gap-2">
+        {WIDGET_GROUPS.map((g) => (
+          <button
+            key={g.id}
+            onClick={() => setActive(g.id)}
+            className={cn(
+              "cursor-pointer rounded-full px-4 py-2 text-[13px] font-semibold transition-colors",
+              active === g.id ? "bg-ink-1 text-bg-0" : "text-ink-3 hover:text-ink-1",
+            )}
+          >
+            {g.label}
+          </button>
+        ))}
+      </div>
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={active}
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -10 }}
+          transition={{ duration: 0.25, ease: EASE_OUT }}
+          className="grid grid-cols-2 gap-4 sm:grid-cols-4"
+        >
+          {group.types.map((t) => (
+            <SpotlightCard key={t} className="h-full p-4">
+              <WidgetSampleCard type={t} height={150} />
+            </SpotlightCard>
+          ))}
+        </motion.div>
+      </AnimatePresence>
+    </div>
+  );
+}
+
 function AuroraBackground() {
   const { scrollY } = useScroll();
   const y1 = useTransform(scrollY, [0, 800], [0, 160]);
@@ -502,8 +642,6 @@ function HowItWorksTimeline() {
 
 export default function LandingPage() {
   const navigate = useNavigate();
-  const { scrollY } = useScroll();
-  const navBackdropOpacity = useTransform(scrollY, [0, 80], [0, 1]);
 
   const scrollTo = (id: string) => {
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -513,50 +651,58 @@ export default function LandingPage() {
 
   return (
     <div className="relative min-h-screen overflow-x-clip bg-bg-0 text-ink-1">
-      <div className="sticky top-0 z-20 flex items-center justify-between border-b border-transparent px-12 py-[18px]">
+      <div className="sticky top-4 z-20 flex justify-center px-4">
         <motion.div
-          aria-hidden
-          style={{ opacity: navBackdropOpacity }}
-          className="absolute inset-0 border-b border-border-subtle bg-bg-0/90 backdrop-blur"
-        />
-        <div className="relative flex items-center gap-8">
-          <div className="flex items-center gap-2.5">
-            <div
-              className="h-7 w-7 rounded-lg"
-              style={{ background: "linear-gradient(135deg, #8b5cf6, #22d3ee)" }}
-            />
-            <div className="font-display text-[16px] font-bold">AiDi Studio</div>
+          initial={{ opacity: 0, y: -16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, ease: EASE_OUT }}
+          className="flex w-full max-w-[1080px] items-center justify-between gap-8 rounded-full border border-border-subtle bg-bg-1/95 px-6 py-3 shadow-lg backdrop-blur"
+        >
+          <div className="flex items-center gap-10">
+            <div className="flex items-center gap-2.5">
+              <div
+                className="h-7 w-7 rounded-lg"
+                style={{ background: "linear-gradient(135deg, #8b5cf6, #22d3ee)" }}
+              />
+              <div className="font-display text-[17px] font-bold">AiDi Studio</div>
+            </div>
+            <div className="hidden items-center gap-7 md:flex">
+              <DropdownMenu>
+                <DropdownMenuTrigger className="flex cursor-pointer items-center gap-1 text-[13px] text-ink-2 outline-none hover:text-ink-1">
+                  Product
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="min-w-[200px]">
+                  <DropdownMenuItem onClick={() => scrollTo("how-it-works")}>How it works</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => scrollTo("demo")}>Live demo</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => scrollTo("features")}>Features</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <button onClick={() => navigate("/components")} className="cursor-pointer text-[13px] text-ink-2 hover:text-ink-1">
+                Components
+              </button>
+              <button onClick={() => scrollTo("pricing")} className="cursor-pointer text-[13px] text-ink-2 hover:text-ink-1">
+                Pricing
+              </button>
+            </div>
           </div>
-          <div className="hidden items-center gap-6 md:flex">
-            <button onClick={() => scrollTo("how-it-works")} className="cursor-pointer text-[13px] text-ink-2 hover:text-ink-1">
-              How it works
+          <div className="flex items-center gap-6">
+            <button onClick={() => navigate("/login")} className="hidden cursor-pointer text-[13px] text-ink-2 hover:text-ink-1 sm:inline">
+              Log in
             </button>
-            <button onClick={() => scrollTo("demo")} className="cursor-pointer text-[13px] text-ink-2 hover:text-ink-1">
-              Live demo
-            </button>
-            <button onClick={() => scrollTo("features")} className="cursor-pointer text-[13px] text-ink-2 hover:text-ink-1">
-              Features
-            </button>
-            <button onClick={() => navigate("/components")} className="cursor-pointer text-[13px] text-ink-2 hover:text-ink-1">
-              Components
-            </button>
-            <button onClick={() => scrollTo("pricing")} className="cursor-pointer text-[13px] text-ink-2 hover:text-ink-1">
-              Pricing
-            </button>
+            <Button size="sm" className="rounded-full px-5" onClick={() => navigate("/signup")}>
+              Get Started
+            </Button>
           </div>
-        </div>
-        <div className="relative flex items-center gap-5">
-          <button onClick={() => navigate("/login")} className="cursor-pointer text-[13px] text-ink-2 hover:text-ink-1">
-            Log in
-          </button>
-          <Button size="sm" onClick={() => navigate("/signup")}>
-            Start free
-          </Button>
-        </div>
+        </motion.div>
       </div>
 
       <div className="relative">
         <AuroraBackground />
+
+        {CONNECTION_CHIPS.map((chip) => (
+          <ConnectionChip key={chip.label} {...chip} />
+        ))}
 
         <motion.div
           initial="hidden"
@@ -566,7 +712,8 @@ export default function LandingPage() {
         >
           <motion.div
             variants={fadeUp}
-            className="mb-[26px] inline-flex items-center gap-1.5 rounded-full border border-border-strong bg-bg-1 px-3.5 py-1.5 text-[12px] text-brand-violet-light"
+            className="mb-[26px] inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-semibold text-white shadow-md"
+            style={{ background: "linear-gradient(115deg, #8b5cf6, #ec4899, #f59e0b)" }}
           >
             <motion.span
               animate={{ rotate: [0, 20, -10, 0] }}
@@ -642,54 +789,17 @@ export default function LandingPage() {
               style={{ boxShadow: "0 30px 80px rgba(0,0,0,0.5)" }}
             >
               <div className="grid grid-cols-4 gap-3.5 rounded-lg bg-surface-sunken p-6">
-                <div className="col-span-2 h-[150px] rounded-lg border border-border-strong bg-bg-2 p-4">
-                  <div className="mb-2.5 text-[11px] text-ink-3">MONTHLY REVENUE</div>
-                  <svg width="100%" height="90" viewBox="0 0 300 90" preserveAspectRatio="none">
-                    <motion.polyline
-                      points="0,70 40,55 80,60 120,35 160,42 200,20 240,28 300,10"
-                      fill="none"
-                      stroke="#8b5cf6"
-                      strokeWidth={3}
-                      initial={{ pathLength: 0 }}
-                      animate={{ pathLength: 1 }}
-                      transition={{ duration: 1.4, ease: EASE_OUT, delay: 0.6 }}
-                    />
-                  </svg>
+                <div className="col-span-2 rounded-lg border border-border-strong bg-bg-2 p-4">
+                  <WidgetSampleCard type="line" height={100} />
                 </div>
                 <div className="rounded-lg border border-border-strong bg-bg-2 p-4">
-                  <div className="text-[11px] text-ink-3">ACTIVE USERS</div>
-                  <div className="font-display mt-2.5 text-[30px] font-bold">18.2k</div>
-                  <div className="mt-1 text-[11px] text-brand-green">▲ 12.4%</div>
+                  <WidgetSampleCard type="stat" height={100} />
                 </div>
-                <div className="flex items-center justify-center rounded-lg border border-border-strong bg-bg-2 p-4">
-                  <svg width="80" height="80" viewBox="0 0 42 42">
-                    <circle r="15.9" cx="21" cy="21" fill="transparent" stroke="var(--color-border-strong)" strokeWidth={6} />
-                    <circle
-                      r="15.9"
-                      cx="21"
-                      cy="21"
-                      fill="transparent"
-                      stroke="#22d3ee"
-                      strokeWidth={6}
-                      strokeDasharray="60 100"
-                      strokeDashoffset={25}
-                    />
-                    <circle
-                      r="15.9"
-                      cx="21"
-                      cy="21"
-                      fill="transparent"
-                      stroke="#8b5cf6"
-                      strokeWidth={6}
-                      strokeDasharray="25 100"
-                      strokeDashoffset={-35}
-                    />
-                  </svg>
+                <div className="rounded-lg border border-border-strong bg-bg-2 p-4">
+                  <WidgetSampleCard type="donut" height={100} />
                 </div>
-                <div className="col-span-4 flex gap-6 rounded-lg border border-border-strong bg-bg-2 px-4 py-3.5">
-                  <div className="text-[12px] text-ink-3">Region</div>
-                  <div className="text-[12px] text-ink-3">Signups</div>
-                  <div className="text-[12px] text-ink-3">Revenue</div>
+                <div className="col-span-4 rounded-lg border border-border-strong bg-bg-2 p-4">
+                  <WidgetSampleCard type="table" height={90} />
                 </div>
               </div>
             </div>
@@ -784,19 +894,13 @@ export default function LandingPage() {
           </div>
           <div className="font-display text-[32px] font-bold">24 components, ready to drop in</div>
           <div className="mx-auto mt-2.5 max-w-[520px] text-[14px] leading-[1.6] text-ink-2">
-            Charts, metrics, data, and layout components — each one binds to a live resource or works as a
-            standalone dashboard tile.
+            Charts, metrics, data, and layout components — each one binds to a live resource, exposes its own
+            settings (tooltips, legends, trend indicators, and more), and works as a standalone dashboard tile.
           </div>
         </motion.div>
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          {SHOWCASE_TYPES.map((t) => (
-            <motion.div key={t} variants={fadeUp}>
-              <SpotlightCard className="h-full p-4">
-                <WidgetSampleCard type={t} height={140} />
-              </SpotlightCard>
-            </motion.div>
-          ))}
-        </div>
+        <motion.div variants={fadeUp}>
+          <ComponentShowcase />
+        </motion.div>
         <motion.div variants={fadeUp} className="mt-[34px] text-center">
           <Button variant="outline" onClick={() => navigate("/components")} className="group px-[22px] py-[11px] text-[13px]">
             Browse all 24 components

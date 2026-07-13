@@ -71,8 +71,9 @@ export default function ComponentsGalleryPage() {
           </div>
           <div className="font-display text-[40px] font-bold leading-[1.15]">24 components, one design system</div>
           <div className="mx-auto mt-3.5 max-w-[560px] text-[15px] leading-[1.6] text-ink-2">
-            Charts, metrics, data, and layout components — every one ready to bind to a live API resource or drop
-            onto a dashboard as-is. Flip the theme switch above to see how they hold up in light and dark.
+            Charts, metrics, data, and layout components — each fully configurable (tooltips, legends, gridlines,
+            trend indicators, and more) and ready to bind to a live API resource or drop onto a dashboard as-is.
+            Flip the theme switch above to see how they hold up in light and dark.
           </div>
         </div>
 

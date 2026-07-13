@@ -1,5 +1,6 @@
 import type { WidgetFineTune, WidgetType } from "@/types";
-import { TYPE_COLOR, TYPE_LABEL } from "@/components/widgets/widgetTypeMeta";
+import { TYPE_COLOR, TYPE_ICON, TYPE_LABEL } from "@/components/widgets/widgetTypeMeta";
+import { WidgetCardHeader } from "@/components/widgets/WidgetCardHeader";
 import { WidgetRenderer } from "@/components/widgets/WidgetRenderer";
 import { cn } from "@/lib/utils";
 
@@ -12,11 +13,23 @@ const PLACEHOLDER_IMAGE =
 /** Representative sample fine-tune per type, so unbound preview tiles (marketing pages, this
  * card) show something meaningful instead of "add X in the builder" empty states. */
 const SAMPLE_FT_OVERRIDES: Partial<Record<WidgetType, Partial<WidgetFineTune>>> = {
+  line: { subtitle: "Weekly trend" },
+  area: { subtitle: "Cumulative growth" },
+  bar: { subtitle: "Category comparison" },
+  "stacked-bar": { subtitle: "Segmented by region" },
+  donut: { subtitle: "Composition breakdown" },
+  scatter: { subtitle: "Correlation view" },
+  radar: { subtitle: "Multi-axis comparison" },
+  treemap: { subtitle: "Relative sizing" },
+  funnel: { subtitle: "Stage drop-off" },
   gauge: { min: 0, max: 100, thresholdWarn: 60, thresholdCritical: 85, unit: "%" },
   progress: { min: 0, max: 100, thresholdWarn: 60, thresholdCritical: 85 },
   stat: { unit: "", trendLabel: "vs last period", footer1Label: "Fleet coverage", footer2Label: "Due in 30 days" },
   sparkline: { unit: "" },
-  table: { pageSize: 4 },
+  table: { pageSize: 4, subtitle: "Sample records" },
+  list: { subtitle: "Ranked by value" },
+  map: { subtitle: "Regional distribution" },
+  "calendar-heatmap": { subtitle: "Daily activity" },
   text: { body: "Quarterly review notes go here — a static text block for context alongside your charts." },
   image: { imageUrl: PLACEHOLDER_IMAGE },
   divider: { title: "Q3 Metrics" },
@@ -52,13 +65,16 @@ interface WidgetSampleCardProps {
 
 /** A widget rendered with representative sample data instead of a live resource — used
  * anywhere the product wants to show what a component looks like without a real project
- * (marketing pages, the public component gallery). */
+ * (marketing pages, the public component gallery). Shares WidgetCardHeader with the
+ * dashboard builder and published dashboards, so a preview here looks exactly like the
+ * real thing. */
 export function WidgetSampleCard({ type, height = 180, className }: WidgetSampleCardProps) {
+  const ft = sampleFineTune(type);
   return (
     <div className={cn("flex flex-col gap-2.5", className)}>
-      <div className="text-[12px] font-semibold text-ink-1">{TYPE_LABEL[type]}</div>
+      <WidgetCardHeader icon={TYPE_ICON[type]} color={ft.color} title={ft.title} subtitle={ft.subtitle} />
       <div style={{ height }}>
-        <WidgetRenderer type={type} ft={sampleFineTune(type)} />
+        <WidgetRenderer type={type} ft={ft} />
       </div>
     </div>
   );
