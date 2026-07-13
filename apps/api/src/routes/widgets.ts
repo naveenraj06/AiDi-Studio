@@ -4,25 +4,22 @@ import { requireRole } from "../lib/authz.js";
 import { serializeWidget, type WidgetRow } from "../lib/serialize.js";
 import { supabase } from "../lib/supabase.js";
 import { parseBody } from "../lib/validate.js";
+import { WIDGET_CATEGORIES, WIDGET_TYPES } from "../lib/widgetTypes.js";
 
 const WIDGET_SELECT = "*, resource:api_resources(id, name)";
 
 const createSchema = z.object({
   name: z.string().trim().min(1, "Enter a widget name"),
-  type: z.enum(["line", "bar", "stat", "table", "donut", "map"]),
+  type: z.enum(WIDGET_TYPES),
   isTemplate: z.boolean().default(false),
+  category: z.enum(WIDGET_CATEGORIES).nullable().optional(),
+  // Layout/UI primitives (text, button, tabs, ...) and templates-in-progress
+  // aren't bound to a resource yet, so this is intentionally optional at the
+  // schema level — chart/metric/data types just won't render live data
+  // without one.
   resourceId: z.string().trim().min(1).nullable().optional(),
   mapping: z.array(z.object({ field: z.string(), role: z.string() })).optional(),
-  fineTune: z
-    .object({
-      title: z.string(),
-      color: z.string(),
-      showLegend: z.boolean(),
-      showPoints: z.boolean(),
-      refreshInterval: z.number(),
-    })
-    .partial()
-    .optional(),
+  fineTune: z.record(z.string(), z.unknown()).optional(),
 });
 
 const updateSchema = createSchema.partial();
@@ -32,6 +29,7 @@ function toRow(input: Partial<z.infer<typeof createSchema>>) {
   if (input.name !== undefined) row.name = input.name;
   if (input.type !== undefined) row.type = input.type;
   if (input.isTemplate !== undefined) row.is_template = input.isTemplate;
+  if (input.category !== undefined) row.category = input.category;
   if (input.resourceId !== undefined) row.resource_id = input.resourceId;
   if (input.mapping !== undefined) row.mapping = input.mapping;
   if (input.fineTune !== undefined) row.fine_tune = input.fineTune;
@@ -124,6 +122,42 @@ export default async function widgetRoutes(app: FastifyInstance) {
       if (error) return reply.code(500).send({ error: "Failed to delete widget" });
       if (!data || data.length === 0) return reply.code(404).send({ error: "Widget not found" });
       return reply.code(204).send();
+    },
+  );
+
+  // "Use template": copies a template widget's type/mapping/styling into a new,
+  // non-template widget so the original stays reusable. The copy starts
+  // unbound (resource_id null) — the caller attaches a resource next.
+  app.post(
+    "/projects/:projectId/widgets/:id/duplicate",
+    { preHandler: [requireRole("editor", "projectId")] },
+    async (request, reply) => {
+      const { projectId, id } = request.params as { projectId: string; id: string };
+
+      const { data: source, error: fetchError } = await supabase
+        .from("widgets")
+        .select("name, type, category, mapping, fine_tune")
+        .eq("id", id)
+        .eq("project_id", projectId)
+        .maybeSingle();
+      if (fetchError || !source) return reply.code(404).send({ error: "Widget not found" });
+
+      const { data: widget, error } = await supabase
+        .from("widgets")
+        .insert({
+          project_id: projectId,
+          name: `${source.name} copy`,
+          type: source.type,
+          category: source.category,
+          mapping: source.mapping,
+          fine_tune: source.fine_tune,
+          is_template: false,
+          resource_id: null,
+        })
+        .select(WIDGET_SELECT)
+        .single<WidgetRow>();
+      if (error || !widget) return reply.code(500).send({ error: "Failed to duplicate widget" });
+      return reply.code(201).send({ widget: serializeWidget(widget) });
     },
   );
 }

@@ -1,4 +1,4 @@
-const STEP_LABELS = ["Resource", "AI suggestion", "Fine-tune", "Preview & save"];
+const STEP_LABELS = ["Resource", "Component type", "Fine-tune", "Preview & save"];
 
 export function StepProgress({ step }: { step: number }) {
   return (

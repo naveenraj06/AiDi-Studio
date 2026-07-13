@@ -66,6 +66,12 @@ export const resourcesApi = createApi({
         { type: "Resource", id },
       ],
     }),
+    // Live response body for a resource, proxied server-side (credentials never
+    // reach the browser). Widgets poll this via `pollingInterval` for refresh.
+    getResourceData: builder.query<unknown, { projectId: string; id: string }>({
+      query: ({ projectId, id }) => ({ url: `/projects/${projectId}/resources/${id}/data` }),
+      transformResponse: (response: { data: unknown }) => response.data,
+    }),
   }),
 });
 
@@ -75,4 +81,5 @@ export const {
   useUpdateResourceMutation,
   useDeleteResourceMutation,
   useTestResourceConnectionMutation,
+  useGetResourceDataQuery,
 } = resourcesApi;

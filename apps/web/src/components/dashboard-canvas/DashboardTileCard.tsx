@@ -1,11 +1,14 @@
-import type { WidgetType } from "@/types";
+import type { FieldMapping, WidgetFineTune, WidgetType } from "@/types";
 import type { LiveSource } from "@/lib/liveData";
 import { WidgetRenderer } from "@/components/widgets/WidgetRenderer";
 
 interface DashboardTileCardProps {
   name: string;
   type: WidgetType;
-  color: string;
+  projectId: string;
+  resourceId: string | null;
+  mapping: FieldMapping[] | null;
+  ft: Partial<WidgetFineTune>;
   colSpan: number;
   rowSpan: number;
   liveSource?: LiveSource;
@@ -19,7 +22,10 @@ interface DashboardTileCardProps {
 export function DashboardTileCard({
   name,
   type,
-  color,
+  projectId,
+  resourceId,
+  mapping,
+  ft,
   colSpan,
   rowSpan,
   liveSource,
@@ -67,7 +73,14 @@ export function DashboardTileCard({
         </div>
       </div>
       <div className="min-h-0 flex-1">
-        <WidgetRenderer type={type} color={color} showLegend showPoints liveSource={liveSource} />
+        <WidgetRenderer
+          type={type}
+          projectId={projectId}
+          resourceId={resourceId}
+          mapping={mapping}
+          ft={ft}
+          liveSource={liveSource}
+        />
       </div>
     </div>
   );

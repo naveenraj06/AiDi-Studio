@@ -121,7 +121,11 @@ export default function PublicDashboardPage() {
               >
                 <div className="mb-2.5 text-[12px] font-semibold text-ink-1">{tile.name}</div>
                 <div className="min-h-0 flex-1">
-                  <WidgetRenderer type={tile.type} color={tile.color} showLegend showPoints liveSource={tile.liveSource} />
+                  {/* Anonymous viewers never receive resource_id/mapping (see
+                      serializeDashboard's PUBLIC_DASHBOARD_SELECT), so public
+                      dashboards render sample data except for the weather/news
+                      demo, which fetches straight from public APIs. */}
+                  <WidgetRenderer type={tile.type} ft={{ color: tile.color }} liveSource={tile.liveSource} />
                 </div>
               </div>
             ))}

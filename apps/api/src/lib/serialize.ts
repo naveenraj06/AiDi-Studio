@@ -63,6 +63,7 @@ export interface WidgetRow {
   name: string;
   type: string;
   is_template: boolean;
+  category: string | null;
   resource_id: string | null;
   resource: { id: string; name: string } | null;
   mapping: unknown;
@@ -76,6 +77,7 @@ export function serializeWidget(w: WidgetRow) {
     name: w.name,
     type: w.type,
     is_template: w.is_template,
+    category: w.category ?? null,
     resource: w.resource?.name ?? null,
     resource_id: w.resource_id,
     mapping: w.mapping ?? null,

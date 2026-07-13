@@ -156,4 +156,62 @@ export default async function resourceRoutes(app: FastifyInstance) {
       return reply.send({ resource: serializeResource(updated) });
     },
   );
+
+  // Server-side proxy so widgets can bind to a resource's live response
+  // without ever putting auth_credential in the browser. Same fetch/SSRF
+  // posture as test-connection above, just returning the body instead of
+  // discarding it.
+  app.get(
+    "/projects/:projectId/resources/:id/data",
+    { preHandler: [requireRole("viewer", "projectId")] },
+    async (request, reply) => {
+      const { projectId, id } = request.params as { projectId: string; id: string };
+
+      const { data: resource, error: fetchError } = await supabase
+        .from("api_resources")
+        .select("url, auth_type, auth_credential")
+        .eq("id", id)
+        .eq("project_id", projectId)
+        .maybeSingle();
+      if (fetchError || !resource) return reply.code(404).send({ error: "Resource not found" });
+
+      let url: URL;
+      try {
+        url = assertPublicHttpUrl(resource.url);
+      } catch (err) {
+        return reply.code(400).send({ error: err instanceof Error ? err.message : "Invalid resource URL" });
+      }
+
+      const headers: Record<string, string> = { Accept: "application/json" };
+      if (resource.auth_type === "bearer" && resource.auth_credential) {
+        headers.Authorization = `Bearer ${resource.auth_credential}`;
+      } else if (resource.auth_type === "api_key" && resource.auth_credential) {
+        headers["X-API-Key"] = resource.auth_credential;
+      }
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+      try {
+        const res = await fetch(url, { method: "GET", headers, signal: controller.signal });
+        clearTimeout(timeout);
+        if (!res.ok) return reply.code(502).send({ error: `Resource responded with ${res.status}` });
+
+        // Cap the response we forward on — this is for dashboard widgets, not
+        // bulk data export.
+        const text = await res.text();
+        if (text.length > 1_000_000) return reply.code(502).send({ error: "Resource response too large" });
+
+        let body: unknown;
+        try {
+          body = JSON.parse(text);
+        } catch {
+          return reply.code(502).send({ error: "Resource did not return valid JSON" });
+        }
+        return reply.send({ data: body });
+      } catch {
+        clearTimeout(timeout);
+        return reply.code(502).send({ error: "Failed to reach resource" });
+      }
+    },
+  );
 }

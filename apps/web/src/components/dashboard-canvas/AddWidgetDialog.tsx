@@ -1,7 +1,7 @@
 import type { Widget } from "@/types";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { TYPE_ICON } from "@/components/widgets/widgetTypeMeta";
+import { TYPE_ICON, TYPE_LABEL } from "@/components/widgets/widgetTypeMeta";
 
 interface AddWidgetDialogProps {
   open: boolean;
@@ -35,7 +35,7 @@ export function AddWidgetDialog({ open, onOpenChange, availableWidgets, onCreate
             >
               <span>{TYPE_ICON[w.type]}</span>
               <span className="flex-1 text-[13px]">{w.name}</span>
-              <span className="text-[10px] capitalize text-ink-3">{w.type}</span>
+              <span className="text-[10px] text-ink-3">{TYPE_LABEL[w.type]}</span>
             </div>
           ))}
           {availableWidgets.length === 0 && (

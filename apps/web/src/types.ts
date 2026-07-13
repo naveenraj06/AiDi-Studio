@@ -1,4 +1,23 @@
-export type WidgetType = "line" | "bar" | "stat" | "table" | "donut" | "map";
+export type ChartWidgetType =
+  | "line"
+  | "area"
+  | "bar"
+  | "stacked-bar"
+  | "donut"
+  | "scatter"
+  | "radar"
+  | "treemap"
+  | "funnel";
+
+export type MetricWidgetType = "stat" | "gauge" | "sparkline" | "progress";
+
+export type DataWidgetType = "table" | "list" | "calendar-heatmap" | "map";
+
+export type LayoutWidgetType = "text" | "image" | "divider" | "button" | "tabs" | "modal" | "container";
+
+export type WidgetType = ChartWidgetType | MetricWidgetType | DataWidgetType | LayoutWidgetType;
+
+export type WidgetCategory = "education" | "finance" | "sales" | "operations" | "generic" | "custom";
 
 export type AuthType = "bearer" | "api_key" | "oauth" | "none";
 
@@ -48,6 +67,7 @@ export interface Widget {
   name: string;
   type: WidgetType;
   is_template: boolean;
+  category: WidgetCategory | null;
   resource: string | null;
   resource_id: string | null;
   mapping: FieldMapping[] | null;
@@ -68,12 +88,36 @@ export interface WidgetSuggestion {
   mapping: FieldMapping[];
 }
 
+/** A single sub-view embedded in a Tabs or Modal widget — its own mini widget config. */
+export interface EmbeddedView {
+  label: string;
+  type: WidgetType;
+  resourceId?: string | null;
+  mapping?: FieldMapping[];
+}
+
 export interface WidgetFineTune {
   title: string;
   color: string;
   showLegend: boolean;
   showPoints: boolean;
   refreshInterval: number;
+  // Metric widgets (gauge/progress): value range + status thresholds.
+  unit?: string;
+  min?: number;
+  max?: number;
+  thresholdWarn?: number;
+  thresholdCritical?: number;
+  // Table/list
+  pageSize?: number;
+  // Layout primitives
+  body?: string;
+  imageUrl?: string;
+  buttonLabel?: string;
+  buttonUrl?: string;
+  description?: string;
+  // Tabs (multiple) / Modal (first entry only)
+  views?: EmbeddedView[];
 }
 
 export interface DashboardTile {

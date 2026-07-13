@@ -5,7 +5,6 @@ create type project_role as enum ('owner', 'editor', 'viewer');
 create type auth_type as enum ('bearer', 'api_key', 'oauth', 'none');
 create type resource_status as enum ('healthy', 'error');
 create type imported_from as enum ('postman', 'openapi', 'curl', 'manual');
-create type widget_type as enum ('line', 'bar', 'stat', 'table', 'donut', 'map');
 create type dashboard_status as enum ('draft', 'published');
 create type invoice_status as enum ('paid', 'failed');
 create type billing_status as enum ('active', 'past_due', 'canceled', 'trialing');
@@ -55,8 +54,15 @@ create table widgets (
   id uuid primary key default gen_random_uuid(),
   project_id uuid not null references projects(id) on delete cascade,
   name text not null,
-  type widget_type not null,
+  -- Plain text, not an enum: the widget type catalog (apps/api/src/lib/widgetTypes.ts)
+  -- grows often, and a Postgres enum can only ever gain values, never lose or
+  -- rename them, without a manual ALTER TYPE migration. The allow-list is
+  -- enforced at the application layer (zod) instead.
+  type text not null,
   is_template boolean not null default false,
+  -- Domain tag for reusable templates (e.g. 'education', 'finance'); null for
+  -- ordinary project widgets.
+  category text,
   resource_id uuid references api_resources(id) on delete set null,
   mapping jsonb,
   fine_tune jsonb,

@@ -1,11 +1,12 @@
 import * as React from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import type { ApiResource, WidgetFineTune, WidgetSuggestion, WidgetType } from "@/types";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import type { ApiResource, FieldMapping, WidgetCategory, WidgetFineTune, WidgetSuggestion, WidgetType } from "@/types";
 import { useAuth } from "@/hooks/useAuth";
 import { useGetProjectQuery } from "@/store/api/projectsApi";
 import { useGetResourcesQuery } from "@/store/api/resourcesApi";
 import { useCreateWidgetMutation, useGetWidgetsQuery, useUpdateWidgetMutation } from "@/store/api/widgetsApi";
 import { getErrorMessage } from "@/lib/errors";
+import { requiresResource } from "@/components/widgets/widgetTypeMeta";
 import { suggestFor } from "@/components/widget-builder/suggestFor";
 import { StepProgress } from "@/components/widget-builder/StepProgress";
 import { Step1Resource } from "@/components/widget-builder/Step1Resource";
@@ -23,6 +24,7 @@ const DEFAULT_FT: WidgetFineTune = {
 
 export default function WidgetBuilderPage() {
   const { projectId, widgetId } = useParams<{ projectId: string; widgetId: string }>();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { toast } = useAuth();
   const isEditing = widgetId !== "new";
@@ -35,14 +37,17 @@ export default function WidgetBuilderPage() {
 
   const existingWidget = isEditing ? widgets?.find((w) => w.id === widgetId) : undefined;
   const widgetNotFound = isEditing && !widgetsLoading && !!widgets && !existingWidget;
+  const fromTemplate = searchParams.get("fromTemplate") === "1";
 
   const [step, setStep] = React.useState(1);
   const [selectedResourceId, setSelectedResourceId] = React.useState<string | null>(null);
   const [analyzing, setAnalyzing] = React.useState(false);
   const [suggestion, setSuggestion] = React.useState<WidgetSuggestion | null>(null);
+  const [mapping, setMapping] = React.useState<FieldMapping[]>([]);
   const [chosenTypeOverride, setChosenTypeOverride] = React.useState<WidgetType | null>(null);
   const [ft, setFt] = React.useState<WidgetFineTune>(DEFAULT_FT);
   const [saveAsTemplate, setSaveAsTemplate] = React.useState(false);
+  const [category, setCategory] = React.useState<WidgetCategory | null>(null);
   const [saving, setSaving] = React.useState(false);
   const [prefilled, setPrefilled] = React.useState(false);
 
@@ -50,26 +55,37 @@ export default function WidgetBuilderPage() {
     if (isEditing && existingWidget && !prefilled) {
       setSelectedResourceId(existingWidget.resource_id);
       setChosenTypeOverride(existingWidget.type);
+      setMapping(existingWidget.mapping ?? []);
       setFt({
         ...DEFAULT_FT,
         ...(existingWidget.fine_tune ?? {}),
         title: existingWidget.fine_tune?.title || existingWidget.name,
       });
       setSaveAsTemplate(existingWidget.is_template);
-      setStep(3);
+      setCategory(existingWidget.category);
+      // A duplicated-from-template widget lands here unbound — send the user
+      // to resource selection instead of straight to fine-tune.
+      const needsResource = requiresResource(existingWidget.type) && !existingWidget.resource_id && fromTemplate;
+      setStep(needsResource ? 1 : 3);
       setPrefilled(true);
     }
-  }, [isEditing, existingWidget, prefilled]);
+  }, [isEditing, existingWidget, prefilled, fromTemplate]);
 
   if (!projectId) return null;
 
   const backToLibrary = () => navigate(`/projects/${projectId}/widgets`);
 
+  const updateFt = (patch: Partial<WidgetFineTune>) => setFt((prev) => ({ ...prev, ...patch }));
+
   const runAnalysis = (resourceId: string) => {
     setAnalyzing(true);
     const resource = resources?.find((r) => r.id === resourceId);
     setTimeout(() => {
-      if (resource) setSuggestion(suggestFor(resource));
+      if (resource) {
+        const result = suggestFor(resource);
+        setSuggestion(result);
+        setMapping(result.mapping);
+      }
       setAnalyzing(false);
     }, 900);
   };
@@ -89,40 +105,37 @@ export default function WidgetBuilderPage() {
     runAnalysis(selectedResourceId);
   };
 
+  const skipToStep2 = () => {
+    setSelectedResourceId(null);
+    setSuggestion(null);
+    setMapping([]);
+    setStep(2);
+  };
+
   const backToStep2 = () => {
     if (!suggestion && selectedResourceId) runAnalysis(selectedResourceId);
     setStep(2);
   };
 
-  const chosenType = chosenTypeOverride ?? suggestion?.suggestedType ?? "table";
+  const chosenType: WidgetType = chosenTypeOverride ?? suggestion?.suggestedType ?? "table";
 
   const saveWidget = async () => {
     setSaving(true);
     try {
+      const input = {
+        name: ft.title,
+        type: chosenType,
+        isTemplate: saveAsTemplate,
+        category: saveAsTemplate ? (category ?? "generic") : null,
+        resourceId: selectedResourceId,
+        mapping,
+        fineTune: ft,
+      };
       if (isEditing && widgetId) {
-        await updateWidget({
-          projectId: projectId ?? "",
-          id: widgetId,
-          input: {
-            name: ft.title,
-            type: chosenType,
-            isTemplate: saveAsTemplate,
-            resourceId: selectedResourceId,
-            fineTune: ft,
-          },
-        }).unwrap();
+        await updateWidget({ projectId, id: widgetId, input }).unwrap();
         toast("Widget updated", "success");
       } else {
-        await createWidget({
-          projectId: projectId ?? "",
-          input: {
-            name: ft.title,
-            type: chosenType,
-            isTemplate: saveAsTemplate,
-            resourceId: selectedResourceId,
-            fineTune: ft,
-          },
-        }).unwrap();
+        await createWidget({ projectId, input }).unwrap();
         toast("Widget saved", "success");
       }
       navigate(`/projects/${projectId}/widgets`);
@@ -178,11 +191,13 @@ export default function WidgetBuilderPage() {
           selectedResourceId={selectedResourceId}
           onSelect={selectResource}
           onNext={toStep2}
+          onSkip={skipToStep2}
         />
       )}
 
       {step === 2 && (
         <Step2Suggestion
+          hasResource={!!selectedResourceId}
           analyzing={analyzing}
           suggestion={suggestion}
           chosenType={chosenTypeOverride}
@@ -194,12 +209,10 @@ export default function WidgetBuilderPage() {
 
       {step === 3 && (
         <Step3FineTune
+          type={chosenType}
           ft={ft}
-          onTitleChange={(title) => setFt((prev) => ({ ...prev, title }))}
-          onColorChange={(color) => setFt((prev) => ({ ...prev, color }))}
-          onToggleLegend={() => setFt((prev) => ({ ...prev, showLegend: !prev.showLegend }))}
-          onTogglePoints={() => setFt((prev) => ({ ...prev, showPoints: !prev.showPoints }))}
-          onRefreshChange={(refreshInterval) => setFt((prev) => ({ ...prev, refreshInterval }))}
+          resources={resources ?? []}
+          onChange={updateFt}
           onBack={backToStep2}
           onNext={() => setStep(4)}
         />
@@ -207,11 +220,16 @@ export default function WidgetBuilderPage() {
 
       {step === 4 && (
         <Step4Preview
+          projectId={projectId}
+          type={chosenType}
+          resourceId={selectedResourceId}
+          mapping={mapping}
           ft={ft}
-          chosenType={chosenType}
           saveAsTemplate={saveAsTemplate}
+          category={category}
           saving={saving}
           onToggleTemplate={() => setSaveAsTemplate((v) => !v)}
+          onCategoryChange={setCategory}
           onBack={() => setStep(3)}
           onSave={saveWidget}
         />

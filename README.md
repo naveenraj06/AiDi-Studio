@@ -120,8 +120,8 @@ access token, then call this API with it as `Authorization: Bearer <token>`.
 
 - `GET /auth/me` — echoes the verified Supabase user (id/email/name)
 - `GET|POST /projects`, `GET|PATCH|DELETE /projects/:id`
-- `GET|POST /projects/:projectId/resources`, `PATCH|DELETE /projects/:projectId/resources/:id`, `POST .../resources/:id/test-connection`
-- `GET|POST /projects/:projectId/widgets`, `PATCH|DELETE /projects/:projectId/widgets/:id`
+- `GET|POST /projects/:projectId/resources`, `PATCH|DELETE /projects/:projectId/resources/:id`, `POST .../resources/:id/test-connection`, `GET .../resources/:id/data` (proxied live response, for widgets)
+- `GET|POST /projects/:projectId/widgets`, `PATCH|DELETE /projects/:projectId/widgets/:id`, `POST .../widgets/:id/duplicate` (instantiate a template)
 - `GET|POST /projects/:projectId/dashboards`, `GET|PATCH|DELETE /projects/:projectId/dashboards/:id`, `PUT .../dashboards/:id/tiles`
 - `GET /public/dashboards/:slug` (published dashboards; `?password=` if share-protected)
 - `GET|POST /projects/:projectId/team`, `PATCH|DELETE /projects/:projectId/team/:id`

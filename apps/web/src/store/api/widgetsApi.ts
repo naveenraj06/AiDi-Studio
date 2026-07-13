@@ -1,12 +1,13 @@
 import { createApi } from "@reduxjs/toolkit/query/react";
 import { axiosBaseQuery } from "@/store/axiosBaseQuery";
 import { axiosClient } from "@/lib/axiosClient";
-import type { FieldMapping, Widget, WidgetFineTune, WidgetType } from "@/types";
+import type { FieldMapping, Widget, WidgetCategory, WidgetFineTune, WidgetType } from "@/types";
 
 export interface WidgetInput {
   name?: string;
   type?: WidgetType;
   isTemplate?: boolean;
+  category?: WidgetCategory | null;
   resourceId?: string | null;
   mapping?: FieldMapping[];
   fineTune?: Partial<WidgetFineTune>;
@@ -52,8 +53,21 @@ export const widgetsApi = createApi({
         { type: "Widget", id },
       ],
     }),
+    // "Use template" — copies a template's type/mapping/styling into a new
+    // real widget (unbound from any resource) that the caller then attaches
+    // a resource to.
+    duplicateWidget: builder.mutation<Widget, { projectId: string; id: string }>({
+      query: ({ projectId, id }) => ({ url: `/projects/${projectId}/widgets/${id}/duplicate`, method: "POST" }),
+      transformResponse: (response: { widget: Widget }) => response.widget,
+      invalidatesTags: (_result, _error, { projectId }) => [{ type: "Widget", id: `LIST-${projectId}` }],
+    }),
   }),
 });
 
-export const { useGetWidgetsQuery, useCreateWidgetMutation, useUpdateWidgetMutation, useDeleteWidgetMutation } =
-  widgetsApi;
+export const {
+  useGetWidgetsQuery,
+  useCreateWidgetMutation,
+  useUpdateWidgetMutation,
+  useDeleteWidgetMutation,
+  useDuplicateWidgetMutation,
+} = widgetsApi;

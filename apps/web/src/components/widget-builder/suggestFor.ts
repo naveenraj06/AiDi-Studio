@@ -1,5 +1,9 @@
 import type { ApiResource, WidgetSuggestion, WidgetType } from "@/types";
-import { ALL_WIDGET_TYPES } from "@/components/widgets/widgetTypeMeta";
+import { CHART_TYPES, DATA_TYPES, METRIC_TYPES } from "@/components/widgets/widgetTypeMeta";
+
+// Layout/UI primitives (text, button, tabs, ...) aren't resource-driven, so
+// they're never a sensible "alternative" to a data-shape-based suggestion.
+const SUGGESTABLE_TYPES: WidgetType[] = [...CHART_TYPES, ...METRIC_TYPES, ...DATA_TYPES];
 
 // Deterministic stand-in for the AI Integration Spec (MASTER-SPEC.md §9):
 // component-type suggestion + field mapping from a resource's shape. A real
@@ -18,15 +22,24 @@ export function suggestFor(resource: ApiResource): WidgetSuggestion {
   let reasoning =
     "Response is a flat object without a clear time series or category field, so a table gives the most faithful view of every returned field.";
 
-  if (/revenue|sales|dau|trend|csat|metrics/.test(name)) {
+  if (/revenue|sales|dau|trend|metrics/.test(name)) {
     type = "line";
     reasoning =
       "Detected a date-like field alongside a numeric field across multiple records — a time series line chart best shows the trend.";
+  } else if (/traffic|usage|volume/.test(name)) {
+    type = "area";
+    reasoning = "Detected a cumulative time series — an area chart emphasizes the magnitude of the trend.";
   } else if (/tickets|region|channel|breakdown|sources|source/.test(name)) {
     type = "bar";
     reasoning =
       "Detected a categorical label field paired with a numeric field — a bar chart compares categories clearly.";
-  } else if (/health|score|active|open/.test(name)) {
+  } else if (/completion|progress|attendance/.test(name)) {
+    type = "progress";
+    reasoning = "Detected a single percentage-like field — a progress indicator best highlights how close it is to complete.";
+  } else if (/health|risk|utilization/.test(name)) {
+    type = "gauge";
+    reasoning = "Detected a bounded score field — a gauge shows where it sits within its range at a glance.";
+  } else if (/csat|score|active|open/.test(name)) {
     type = "stat";
     reasoning =
       "Response is a single object with 2+ numeric fields and no time dimension — a stat card best highlights the headline number.";
@@ -34,13 +47,22 @@ export function suggestFor(resource: ApiResource): WidgetSuggestion {
     type = "donut";
     reasoning =
       "Detected a label + numeric field with 8 or fewer records — a donut chart shows composition well.";
-  } else if (/shipping|sla|map|coverage/.test(name)) {
+  } else if (/funnel|conversion|pipeline/.test(name)) {
+    type = "funnel";
+    reasoning = "Detected sequential stage counts — a funnel best shows drop-off between stages.";
+  } else if (/activity|contributions|commits/.test(name)) {
+    type = "calendar-heatmap";
+    reasoning = "Detected daily activity counts — a calendar heatmap shows the pattern across days at a glance.";
+  } else if (/shipping|sla|map|coverage|regions?\b/.test(name)) {
     type = "map";
     reasoning = "Detected geographic identifiers in the response fields — a map best represents regional coverage.";
+  } else if (/feed|log|events?/.test(name)) {
+    type = "list";
+    reasoning = "Detected a stream of discrete records — a list reads better than a dense table for this shape.";
   }
 
   const confidence = 68 + (h % 28);
-  const alternatives = ALL_WIDGET_TYPES.filter((t) => t !== type)
+  const alternatives = SUGGESTABLE_TYPES.filter((t) => t !== type)
     .sort(() => (h % 7) - 3)
     .slice(0, 3);
   const fieldPool = ["date", "value", "label", "category", "id", "region", "count", "status"];

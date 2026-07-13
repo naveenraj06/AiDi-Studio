@@ -6,16 +6,21 @@ interface Step1ResourceProps {
   selectedResourceId: string | null;
   onSelect: (resource: ApiResource) => void;
   onNext: () => void;
+  onSkip: () => void;
 }
 
-export function Step1Resource({ resources, selectedResourceId, onSelect, onNext }: Step1ResourceProps) {
+export function Step1Resource({ resources, selectedResourceId, onSelect, onNext, onSkip }: Step1ResourceProps) {
   const hasSelection = !!selectedResourceId;
 
   return (
     <div>
       <div className="mb-1 text-[14px] font-semibold text-ink-1">Pick an API resource</div>
       <div className="mb-[18px] text-[12px] text-ink-3">
-        AiDi will analyze a live sample response to suggest a component and field mapping.
+        AiDi will analyze a live sample response to suggest a component and field mapping. Building a reusable
+        template or a static widget (text, image, button, section header)?{" "}
+        <span onClick={onSkip} className="cursor-pointer font-semibold text-brand-violet-light underline">
+          Skip and browse all component types →
+        </span>
       </div>
 
       <div className="flex flex-col gap-2">

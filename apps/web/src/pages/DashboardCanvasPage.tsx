@@ -191,7 +191,9 @@ export default function DashboardCanvasPage() {
       : "";
 
   const usedIds = new Set(layout.map((l) => l.id));
-  const availableWidgets = (allWidgets ?? []).filter((w) => !usedIds.has(w.id));
+  // Templates aren't directly placeable — "Use template" in the widgets
+  // library duplicates one into a real, resource-bound widget first.
+  const availableWidgets = (allWidgets ?? []).filter((w) => !usedIds.has(w.id) && !w.is_template);
 
   return (
     <div className="flex h-full flex-col">
@@ -248,16 +250,20 @@ export default function DashboardCanvasPage() {
         {layout.length > 0 ? (
           <div className="grid grid-cols-4 gap-4" style={{ gridAutoRows: "170px" }}>
             {layout.map((tile, i) => {
-              const w = widgetMap.get(tile.id) || { name: "Unknown widget", type: "table" as const };
+              const w = widgetMap.get(tile.id);
+              const type = w?.type ?? "table";
               return (
                 <DashboardTileCard
                   key={tile.id + i}
-                  name={w.name}
-                  type={w.type}
-                  color={TYPE_COLOR[w.type] || "#8b5cf6"}
+                  name={w?.name ?? "Unknown widget"}
+                  type={type}
+                  projectId={projectId}
+                  resourceId={w?.resource_id ?? null}
+                  mapping={w?.mapping ?? null}
+                  ft={{ color: TYPE_COLOR[type] || "#8b5cf6", ...(w?.fine_tune ?? {}) }}
                   colSpan={tile.colSpan}
                   rowSpan={tile.rowSpan}
-                  liveSource={deriveLiveSource(widgetMap.get(tile.id)?.resource, w.type)}
+                  liveSource={deriveLiveSource(w?.resource, type)}
                   onDragStart={() => setDragIndex(i)}
                   onDrop={() => handleDrop(i)}
                   onCycleSpan={() => cycleSpan(i)}
