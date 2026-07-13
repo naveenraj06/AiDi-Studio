@@ -1,13 +1,15 @@
 import * as React from "react";
 import type { ShapedRow } from "@/lib/shapeWidgetData";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { cn } from "@/lib/utils";
 
 interface TableWidgetProps {
   rows: ShapedRow[];
   pageSize?: number;
+  stripedRows?: boolean;
 }
 
-export function TableWidget({ rows, pageSize = 5 }: TableWidgetProps) {
+export function TableWidget({ rows, pageSize = 5, stripedRows = false }: TableWidgetProps) {
   const [sortKey, setSortKey] = React.useState<string | null>(null);
   const [sortDir, setSortDir] = React.useState<1 | -1>(1);
   const [page, setPage] = React.useState(0);
@@ -60,7 +62,7 @@ export function TableWidget({ rows, pageSize = 5 }: TableWidgetProps) {
           </TableHeader>
           <TableBody>
             {pageRows.map((row, i) => (
-              <TableRow key={i}>
+              <TableRow key={i} className={cn(stripedRows && i % 2 === 1 && "bg-bg-2")}>
                 {columns.map((col) => (
                   <TableCell key={col} className="whitespace-nowrap text-[12px]">
                     {String(row[col])}

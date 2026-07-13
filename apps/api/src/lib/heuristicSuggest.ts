@@ -99,12 +99,20 @@ export function heuristicSuggest(sample: unknown): HeuristicSuggestion {
   }
 
   if (records.length === 1 && numericFields[0]) {
+    // Extra numeric fields beyond the headline value opportunistically become
+    // the stat card's trend delta and footer sub-stats (see OPTIONAL_ROLES in
+    // widgetSuggestRoles.ts) — still a valid stat card if there's only one.
+    const extraRoles = ["trend", "footer-value-1", "footer-value-2"];
+    const mapping = [
+      { field: numericFields[0], role: "value" },
+      ...numericFields.slice(1, 1 + extraRoles.length).map((field, i) => ({ field, role: extraRoles[i] })),
+    ];
     return {
       suggestedType: "stat",
       confidence: 65,
       reasoning: `Response is a single record with a numeric field ("${numericFields[0]}") and no time dimension — a stat card highlights the headline number.`,
       alternatives: ["gauge", "progress"],
-      mapping: [{ field: numericFields[0], role: "value" }],
+      mapping,
     };
   }
 

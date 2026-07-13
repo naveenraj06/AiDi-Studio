@@ -2,6 +2,7 @@ interface ButtonWidgetProps {
   buttonLabel?: string;
   buttonUrl?: string;
   color?: string;
+  openInNewTab?: boolean;
 }
 
 // Widget config is authored by a project editor but rendered for anyone
@@ -17,14 +18,19 @@ function safeHref(url: string | undefined): string | undefined {
   }
 }
 
-export function ButtonWidget({ buttonLabel = "Open link", buttonUrl, color = "#8b5cf6" }: ButtonWidgetProps) {
+export function ButtonWidget({
+  buttonLabel = "Open link",
+  buttonUrl,
+  color = "#8b5cf6",
+  openInNewTab = true,
+}: ButtonWidgetProps) {
   const href = safeHref(buttonUrl);
   return (
     <div className="flex h-full items-center justify-center">
       <a
         href={href}
-        target="_blank"
-        rel="noreferrer"
+        target={openInNewTab ? "_blank" : undefined}
+        rel={openInNewTab ? "noreferrer" : undefined}
         className={href ? "cursor-pointer" : "pointer-events-none opacity-60"}
       >
         <span

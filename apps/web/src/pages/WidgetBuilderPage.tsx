@@ -19,6 +19,7 @@ const DEFAULT_FT: WidgetFineTune = {
   color: "#8b5cf6",
   showLegend: true,
   showPoints: true,
+  showTooltip: true,
   refreshInterval: 60,
 };
 

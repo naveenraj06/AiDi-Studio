@@ -63,6 +63,18 @@ export function pickNumber(rows: ShapedRow[], roles: string[], fallback: number)
   return fallback;
 }
 
+/** First defined value (string or number) under any of the given roles — undefined if none present,
+ * so callers can tell "no data mapped" apart from a real 0/"" value. */
+export function pickRaw(rows: ShapedRow[], roles: string[]): string | number | undefined {
+  for (const row of rows) {
+    for (const role of roles) {
+      const v = row[role];
+      if (v !== undefined && v !== "") return v;
+    }
+  }
+  return undefined;
+}
+
 /** Field names available on the first record of a raw response — used to help
  * a user adjust field mapping against what a resource actually returns. */
 export function inferFieldNames(raw: unknown): string[] {

@@ -34,6 +34,10 @@ export function Step3FineTune({ type, ft, resources, onChange, onBack, onNext }:
   const isMetric = (METRIC_TYPES as WidgetType[]).includes(type);
   const isRangeMetric = type === "gauge" || type === "progress";
   const showColor = type !== "text" && type !== "image";
+  const showSubtitle = requiresResource(type) && !isMetric;
+  const isBar = type === "bar" || type === "stacked-bar";
+  const isCartesian = isBar || type === "line" || type === "area" || type === "scatter";
+  const isLineOrArea = type === "line" || type === "area";
 
   return (
     <div>
@@ -42,6 +46,18 @@ export function Step3FineTune({ type, ft, resources, onChange, onBack, onNext }:
           <Label htmlFor="widget-title">Title</Label>
           <Input id="widget-title" value={ft.title} onChange={(e) => onChange({ title: e.target.value })} />
         </div>
+
+        {showSubtitle && (
+          <div>
+            <Label htmlFor="widget-subtitle">Subtitle (optional)</Label>
+            <Input
+              id="widget-subtitle"
+              value={ft.subtitle ?? ""}
+              onChange={(e) => onChange({ subtitle: e.target.value })}
+              placeholder="Shown under the title on the dashboard card"
+            />
+          </div>
+        )}
 
         {showColor && (
           <div>
@@ -62,6 +78,10 @@ export function Step3FineTune({ type, ft, resources, onChange, onBack, onNext }:
         {isChart && (
           <>
             <div className="flex items-center justify-between py-2.5">
+              <span className="text-[13px] text-ink-1">Show tooltip</span>
+              <Switch checked={ft.showTooltip} onCheckedChange={(v) => onChange({ showTooltip: v })} />
+            </div>
+            <div className="flex items-center justify-between border-t border-border-subtle py-2.5">
               <span className="text-[13px] text-ink-1">Show legend</span>
               <Switch checked={ft.showLegend} onCheckedChange={(v) => onChange({ showLegend: v })} />
             </div>
@@ -69,18 +89,112 @@ export function Step3FineTune({ type, ft, resources, onChange, onBack, onNext }:
               <span className="text-[13px] text-ink-1">Show data points</span>
               <Switch checked={ft.showPoints} onCheckedChange={(v) => onChange({ showPoints: v })} />
             </div>
+            {isBar && (
+              <div className="flex items-center justify-between border-t border-border-subtle py-2.5">
+                <span className="text-[13px] text-ink-1">Horizontal bars</span>
+                <Switch checked={ft.horizontal ?? false} onCheckedChange={(v) => onChange({ horizontal: v })} />
+              </div>
+            )}
+            {isCartesian && (
+              <>
+                <div className="flex items-center justify-between border-t border-border-subtle py-2.5">
+                  <span className="text-[13px] text-ink-1">Show gridlines</span>
+                  <Switch checked={ft.showGrid ?? true} onCheckedChange={(v) => onChange({ showGrid: v })} />
+                </div>
+                <div className="flex items-center justify-between border-t border-border-subtle py-2.5">
+                  <span className="text-[13px] text-ink-1">Show axis labels</span>
+                  <Switch checked={ft.showAxisLabels ?? true} onCheckedChange={(v) => onChange({ showAxisLabels: v })} />
+                </div>
+              </>
+            )}
+            {isLineOrArea && (
+              <div className="flex items-center justify-between border-t border-border-subtle py-2.5">
+                <span className="text-[13px] text-ink-1">Smooth curve</span>
+                <Switch checked={ft.smoothLine ?? true} onCheckedChange={(v) => onChange({ smoothLine: v })} />
+              </div>
+            )}
+            {type === "donut" && (
+              <div className="flex items-center justify-between border-t border-border-subtle py-2.5">
+                <span className="text-[13px] text-ink-1">Solid pie (no center hole)</span>
+                <Switch checked={ft.asPie ?? false} onCheckedChange={(v) => onChange({ asPie: v })} />
+              </div>
+            )}
           </>
         )}
 
+        {type === "map" && (
+          <div className="flex items-center justify-between border-t border-border-subtle py-2.5">
+            <span className="text-[13px] text-ink-1">Show legend</span>
+            <Switch checked={ft.showLegend} onCheckedChange={(v) => onChange({ showLegend: v })} />
+          </div>
+        )}
+
+        {type === "list" && (
+          <div className="flex items-center justify-between border-t border-border-subtle py-2.5">
+            <span className="text-[13px] text-ink-1">Show percentage of total</span>
+            <Switch checked={ft.showPercentage ?? true} onCheckedChange={(v) => onChange({ showPercentage: v })} />
+          </div>
+        )}
+
         {isMetric && (
-          <div>
-            <Label htmlFor="widget-unit">Unit (optional)</Label>
-            <Input
-              id="widget-unit"
-              value={ft.unit ?? ""}
-              onChange={(e) => onChange({ unit: e.target.value })}
-              placeholder="%, $, ms…"
-            />
+          <>
+            <div>
+              <Label htmlFor="widget-unit">Unit (optional)</Label>
+              <Input
+                id="widget-unit"
+                value={ft.unit ?? ""}
+                onChange={(e) => onChange({ unit: e.target.value })}
+                placeholder="%, $, ms…"
+              />
+            </div>
+            <div className="flex items-center justify-between border-t border-border-subtle py-2.5">
+              <span className="text-[13px] text-ink-1">Compact numbers (18.2k vs 18,200)</span>
+              <Switch checked={ft.compactNumbers ?? true} onCheckedChange={(v) => onChange({ compactNumbers: v })} />
+            </div>
+            {type === "sparkline" && (
+              <div className="flex items-center justify-between border-t border-border-subtle py-2.5">
+                <span className="text-[13px] text-ink-1">Show value above line</span>
+                <Switch checked={ft.showValue ?? true} onCheckedChange={(v) => onChange({ showValue: v })} />
+              </div>
+            )}
+          </>
+        )}
+
+        {type === "stat" && (
+          <div className="flex flex-col gap-3 border-t border-border-subtle pt-3.5">
+            <div className="text-[11px] text-ink-3">
+              Trend and footer stats only show up if the resource has extra numeric fields beyond the headline value —
+              these are just their captions.
+            </div>
+            <div>
+              <Label htmlFor="widget-trend-label">Trend caption</Label>
+              <Input
+                id="widget-trend-label"
+                value={ft.trendLabel ?? ""}
+                onChange={(e) => onChange({ trendLabel: e.target.value })}
+                placeholder="vs last period"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label htmlFor="widget-footer1-label">Footer stat 1 (optional)</Label>
+                <Input
+                  id="widget-footer1-label"
+                  value={ft.footer1Label ?? ""}
+                  onChange={(e) => onChange({ footer1Label: e.target.value })}
+                  placeholder="e.g. Fleet coverage"
+                />
+              </div>
+              <div>
+                <Label htmlFor="widget-footer2-label">Footer stat 2 (optional)</Label>
+                <Input
+                  id="widget-footer2-label"
+                  value={ft.footer2Label ?? ""}
+                  onChange={(e) => onChange({ footer2Label: e.target.value })}
+                  placeholder="e.g. Due in 30 days"
+                />
+              </div>
+            </div>
           </div>
         )}
 
@@ -126,34 +240,76 @@ export function Step3FineTune({ type, ft, resources, onChange, onBack, onNext }:
         )}
 
         {type === "table" && (
-          <div>
-            <Label htmlFor="widget-pagesize">Rows per page</Label>
-            <Input
-              id="widget-pagesize"
-              type="number"
-              min={1}
-              value={ft.pageSize ?? 5}
-              onChange={(e) => onChange({ pageSize: Number(e.target.value) })}
-            />
-          </div>
+          <>
+            <div>
+              <Label htmlFor="widget-pagesize">Rows per page</Label>
+              <Input
+                id="widget-pagesize"
+                type="number"
+                min={1}
+                value={ft.pageSize ?? 5}
+                onChange={(e) => onChange({ pageSize: Number(e.target.value) })}
+              />
+            </div>
+            <div className="flex items-center justify-between border-t border-border-subtle py-2.5">
+              <span className="text-[13px] text-ink-1">Striped rows</span>
+              <Switch checked={ft.stripedRows ?? false} onCheckedChange={(v) => onChange({ stripedRows: v })} />
+            </div>
+          </>
         )}
 
         {type === "text" && (
-          <div>
-            <Label htmlFor="widget-body">Content</Label>
-            <Textarea id="widget-body" rows={5} value={ft.body ?? ""} onChange={(e) => onChange({ body: e.target.value })} />
-          </div>
+          <>
+            <div>
+              <Label htmlFor="widget-body">Content</Label>
+              <Textarea id="widget-body" rows={5} value={ft.body ?? ""} onChange={(e) => onChange({ body: e.target.value })} />
+            </div>
+            <div>
+              <Label>Alignment</Label>
+              <Select value={ft.align ?? "left"} onValueChange={(v) => onChange({ align: v as WidgetFineTune["align"] })}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="left">Left</SelectItem>
+                  <SelectItem value="center">Center</SelectItem>
+                  <SelectItem value="right">Right</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </>
         )}
 
         {type === "image" && (
-          <div>
-            <Label htmlFor="widget-image">Image URL</Label>
-            <Input
-              id="widget-image"
-              value={ft.imageUrl ?? ""}
-              onChange={(e) => onChange({ imageUrl: e.target.value })}
-              placeholder="https://…"
-            />
+          <>
+            <div>
+              <Label htmlFor="widget-image">Image URL</Label>
+              <Input
+                id="widget-image"
+                value={ft.imageUrl ?? ""}
+                onChange={(e) => onChange({ imageUrl: e.target.value })}
+                placeholder="https://…"
+              />
+            </div>
+            <div>
+              <Label>Fit</Label>
+              <Select value={ft.fit ?? "cover"} onValueChange={(v) => onChange({ fit: v as WidgetFineTune["fit"] })}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="cover">Cover (fill, may crop)</SelectItem>
+                  <SelectItem value="contain">Contain (fit whole image)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </>
+        )}
+
+        {type === "divider" && (
+          <div className="flex items-center justify-between">
+            <span className="text-[13px] text-ink-1">Dashed line</span>
+            <Switch checked={ft.dashed ?? false} onCheckedChange={(v) => onChange({ dashed: v })} />
           </div>
         )}
 
@@ -169,15 +325,21 @@ export function Step3FineTune({ type, ft, resources, onChange, onBack, onNext }:
         )}
 
         {type === "button" && (
-          <div>
-            <Label htmlFor="widget-button-url">Link URL</Label>
-            <Input
-              id="widget-button-url"
-              value={ft.buttonUrl ?? ""}
-              onChange={(e) => onChange({ buttonUrl: e.target.value })}
-              placeholder="https://…"
-            />
-          </div>
+          <>
+            <div>
+              <Label htmlFor="widget-button-url">Link URL</Label>
+              <Input
+                id="widget-button-url"
+                value={ft.buttonUrl ?? ""}
+                onChange={(e) => onChange({ buttonUrl: e.target.value })}
+                placeholder="https://…"
+              />
+            </div>
+            <div className="flex items-center justify-between border-t border-border-subtle py-2.5">
+              <span className="text-[13px] text-ink-1">Open in new tab</span>
+              <Switch checked={ft.openInNewTab ?? true} onCheckedChange={(v) => onChange({ openInNewTab: v })} />
+            </div>
+          </>
         )}
 
         {type === "container" && (

@@ -35,10 +35,22 @@ export const ROLE_REQUIREMENTS: Record<WidgetTypeValue, string[]> = {
   container: [],
 };
 
+/** Roles a type can use if the data supports them, on top of its required roles —
+ * never validated by satisfiesRoleRequirements, since a suggestion is still
+ * perfectly usable without them. */
+export const OPTIONAL_ROLES: Partial<Record<WidgetTypeValue, string[]>> = {
+  stat: ["trend", "footer-value-1", "footer-value-2"],
+};
+
 export function roleRequirementsGuide(): string {
   return Object.entries(ROLE_REQUIREMENTS)
     .filter(([, roles]) => roles.length > 0)
-    .map(([type, roles]) => `- ${type}: ${roles.join(", ")}`)
+    .map(([type, roles]) => {
+      const optional = OPTIONAL_ROLES[type as WidgetTypeValue];
+      return optional
+        ? `- ${type}: ${roles.join(", ")} (optional, if the data has extra numeric fields: ${optional.join(", ")})`
+        : `- ${type}: ${roles.join(", ")}`;
+    })
     .join("\n");
 }
 

@@ -103,20 +103,51 @@ export interface WidgetFineTune {
   color: string;
   showLegend: boolean;
   showPoints: boolean;
+  showTooltip: boolean;
   refreshInterval: number;
+  // Card header shown above charts/tables/lists — not used by metric widgets,
+  // which render their own compact header.
+  subtitle?: string;
   // Metric widgets (gauge/progress): value range + status thresholds.
   unit?: string;
   min?: number;
   max?: number;
   thresholdWarn?: number;
   thresholdCritical?: number;
+  // Stat card: caption after the trend arrow, and up to two footer sub-stats.
+  // Trend/footer values themselves come from the "trend" / "footer-value-1" /
+  // "footer-value-2" mapping roles — these are just their static captions.
+  trendLabel?: string;
+  footer1Label?: string;
+  footer2Label?: string;
   // Table/list
   pageSize?: number;
+  // Bar/stacked-bar: lay bars out horizontally (categories on the y-axis).
+  horizontal?: boolean;
+  // Line/area/bar/stacked-bar/scatter: gridlines and axis tick labels.
+  showGrid?: boolean;
+  showAxisLabels?: boolean;
+  // Line/area: curved ("monotone") vs straight ("linear") segments.
+  smoothLine?: boolean;
+  // Donut: render with no center hole (a solid pie).
+  asPie?: boolean;
+  // Stat: "18.2k" vs "18,200".
+  compactNumbers?: boolean;
+  // Sparkline: show the headline number above the line.
+  showValue?: boolean;
+  // Table
+  stripedRows?: boolean;
+  // List: show each row's share of the total alongside its value.
+  showPercentage?: boolean;
   // Layout primitives
   body?: string;
+  align?: "left" | "center" | "right";
   imageUrl?: string;
+  fit?: "cover" | "contain";
   buttonLabel?: string;
   buttonUrl?: string;
+  openInNewTab?: boolean;
+  dashed?: boolean;
   description?: string;
   // Tabs (multiple) / Modal (first entry only)
   views?: EmbeddedView[];

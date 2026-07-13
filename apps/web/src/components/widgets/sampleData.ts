@@ -57,7 +57,9 @@ function generateHeatmapSample(): ShapedRow[] {
   return rows;
 }
 
-const METRIC_SAMPLE: ShapedRow[] = [{ value: 18200 }];
+const METRIC_SAMPLE: ShapedRow[] = [
+  { value: 18200, trend: 8.2, "footer-value-1": "96%", "footer-value-2": 14 },
+];
 const RANGE_METRIC_SAMPLE: ShapedRow[] = [{ value: 68 }];
 
 export function sampleRowsFor(type: WidgetType): ShapedRow[] {

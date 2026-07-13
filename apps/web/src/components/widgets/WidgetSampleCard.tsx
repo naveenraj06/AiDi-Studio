@@ -14,7 +14,7 @@ const PLACEHOLDER_IMAGE =
 const SAMPLE_FT_OVERRIDES: Partial<Record<WidgetType, Partial<WidgetFineTune>>> = {
   gauge: { min: 0, max: 100, thresholdWarn: 60, thresholdCritical: 85, unit: "%" },
   progress: { min: 0, max: 100, thresholdWarn: 60, thresholdCritical: 85 },
-  stat: { unit: "" },
+  stat: { unit: "", trendLabel: "vs last period", footer1Label: "Fleet coverage", footer2Label: "Due in 30 days" },
   sparkline: { unit: "" },
   table: { pageSize: 4 },
   text: { body: "Quarterly review notes go here — a static text block for context alongside your charts." },
@@ -38,6 +38,7 @@ export function sampleFineTune(type: WidgetType): WidgetFineTune {
     color: TYPE_COLOR[type],
     showLegend: true,
     showPoints: true,
+    showTooltip: true,
     refreshInterval: 60,
     ...SAMPLE_FT_OVERRIDES[type],
   };

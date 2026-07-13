@@ -3,7 +3,8 @@ import { useParams } from "react-router-dom";
 import { useGetPublicDashboardQuery } from "@/store/api/publicDashboardApi";
 import type { AxiosBaseQueryError } from "@/store/axiosBaseQuery";
 import { deriveLiveSource } from "@/lib/liveData";
-import { TYPE_COLOR } from "@/components/widgets/widgetTypeMeta";
+import { TYPE_COLOR, TYPE_ICON } from "@/components/widgets/widgetTypeMeta";
+import { WidgetCardHeader } from "@/components/widgets/WidgetCardHeader";
 import { WidgetRenderer } from "@/components/widgets/WidgetRenderer";
 
 function NotAvailable() {
@@ -119,7 +120,7 @@ export default function PublicDashboardPage() {
                 className="flex flex-col rounded-xl border border-border-default bg-bg-1 p-4"
                 style={{ gridColumn: `span ${tile.colSpan}` }}
               >
-                <div className="mb-2.5 text-[12px] font-semibold text-ink-1">{tile.name}</div>
+                <WidgetCardHeader icon={TYPE_ICON[tile.type]} color={tile.color} title={tile.name} />
                 <div className="min-h-0 flex-1">
                   {/* Anonymous viewers never receive resource_id/mapping (see
                       serializeDashboard's PUBLIC_DASHBOARD_SELECT), so public

@@ -108,6 +108,12 @@ function renderWidget(
           color={color}
           showLegend={ft.showLegend ?? true}
           showPoints={ft.showPoints ?? true}
+          showTooltip={ft.showTooltip ?? true}
+          horizontal={ft.horizontal ?? false}
+          showGrid={ft.showGrid ?? true}
+          showAxisLabels={ft.showAxisLabels ?? true}
+          smoothLine={ft.smoothLine ?? true}
+          asPie={ft.asPie ?? false}
         />
       );
 
@@ -125,14 +131,19 @@ function renderWidget(
           max={ft.max}
           thresholdWarn={ft.thresholdWarn}
           thresholdCritical={ft.thresholdCritical}
+          trendLabel={ft.trendLabel}
+          footer1Label={ft.footer1Label}
+          footer2Label={ft.footer2Label}
+          compactNumbers={ft.compactNumbers ?? true}
+          showValue={ft.showValue ?? true}
         />
       );
 
     case "table":
-      return <TableWidget rows={rows} pageSize={ft.pageSize} />;
+      return <TableWidget rows={rows} pageSize={ft.pageSize} stripedRows={ft.stripedRows ?? false} />;
 
     case "list":
-      return <ListWidget rows={rows} color={color} />;
+      return <ListWidget rows={rows} color={color} showPercentage={ft.showPercentage ?? true} />;
 
     case "calendar-heatmap":
       return <CalendarHeatmapWidget rows={rows} color={color} />;
@@ -141,16 +152,23 @@ function renderWidget(
       return <MapWidget rows={rows} color={color} showLegend={ft.showLegend ?? true} />;
 
     case "text":
-      return <TextWidget title={ft.title} body={ft.body} />;
+      return <TextWidget title={ft.title} body={ft.body} align={ft.align ?? "left"} />;
 
     case "image":
-      return <ImageWidget imageUrl={ft.imageUrl} title={ft.title} />;
+      return <ImageWidget imageUrl={ft.imageUrl} title={ft.title} fit={ft.fit ?? "cover"} />;
 
     case "divider":
-      return <DividerWidget title={ft.title} />;
+      return <DividerWidget title={ft.title} dashed={ft.dashed ?? false} />;
 
     case "button":
-      return <ButtonWidget buttonLabel={ft.buttonLabel} buttonUrl={ft.buttonUrl} color={color} />;
+      return (
+        <ButtonWidget
+          buttonLabel={ft.buttonLabel}
+          buttonUrl={ft.buttonUrl}
+          color={color}
+          openInNewTab={ft.openInNewTab ?? true}
+        />
+      );
 
     case "container":
       return <ContainerWidget title={ft.title} description={ft.description} color={color} />;

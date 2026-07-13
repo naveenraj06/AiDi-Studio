@@ -269,6 +269,7 @@ export default function DashboardCanvasPage() {
                   onCycleSpan={() => cycleSpan(i)}
                   onCycleRow={() => cycleRow(i)}
                   onRemove={() => removeTile(i)}
+                  onFilter={applyFilter}
                 />
               );
             })}
