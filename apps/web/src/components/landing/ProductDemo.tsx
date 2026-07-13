@@ -19,6 +19,9 @@ import {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { ChartWidget } from "@/components/widgets/ChartWidget";
+import { TableWidget } from "@/components/widgets/TableWidget";
+import type { ShapedRow } from "@/lib/shapeWidgetData";
 
 const EASE_OUT = [0.16, 1, 0.3, 1] as const;
 
@@ -139,8 +142,6 @@ const CHART_META: Record<ChartType, { label: string; icon: React.ComponentType<{
   table: { label: "Table", icon: Table2 },
 };
 
-const DONUT_COLORS = ["#8b5cf6", "#22d3ee", "#34d399", "#fbbf24"];
-
 const STEPS = [
   { key: "connect", label: "Connect", icon: Plug },
   { key: "map", label: "Map fields", icon: Share2 },
@@ -154,8 +155,15 @@ const panelVariants: Variants = {
   exit: { opacity: 0, x: -16, transition: { duration: 0.2, ease: EASE_OUT } },
 };
 
+/** Renders the same ChartWidget/TableWidget used across the builder, dashboards, and
+ * the component gallery — so this "live preview" shows the real components, not a
+ * hand-drawn stand-in. */
 function DemoChart({ type, resource }: { type: ChartType; resource: DemoResource }) {
-  const max = Math.max(...resource.data.map((d) => d.value));
+  const chartRows: ShapedRow[] =
+    type === "donut"
+      ? resource.data.map((d) => ({ label: d.label, value: d.value }))
+      : resource.data.map((d) => ({ "x-axis": d.label, "y-axis": d.value }));
+  const tableRows: ShapedRow[] = resource.fields.map((f) => ({ field: f.key, sample: f.sample }));
 
   return (
     <AnimatePresence mode="wait">
@@ -165,111 +173,12 @@ function DemoChart({ type, resource }: { type: ChartType; resource: DemoResource
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.96 }}
         transition={{ duration: 0.3, ease: EASE_OUT }}
-        className="flex h-full min-h-[190px] items-center justify-center"
+        className="h-[190px] w-full"
       >
-        {type === "line" && (
-          <svg width="100%" height="150" viewBox="0 0 300 150" preserveAspectRatio="none">
-            <motion.polyline
-              points={resource.data
-                .map((d, i) => `${(i / (resource.data.length - 1)) * 300},${140 - (d.value / max) * 120}`)
-                .join(" ")}
-              fill="none"
-              stroke="#8b5cf6"
-              strokeWidth={3}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              initial={{ pathLength: 0 }}
-              animate={{ pathLength: 1 }}
-              transition={{ duration: 0.9, ease: EASE_OUT }}
-            />
-            {resource.data.map((d, i) => (
-              <circle
-                key={d.label}
-                cx={(i / (resource.data.length - 1)) * 300}
-                cy={140 - (d.value / max) * 120}
-                r={3.5}
-                fill="#8b5cf6"
-              />
-            ))}
-          </svg>
-        )}
-
-        {type === "bar" && (
-          <div className="flex h-[150px] w-full items-end justify-between gap-2 px-2">
-            {resource.data.map((d, i) => (
-              <div key={d.label} className="flex flex-1 flex-col items-center gap-1.5">
-                <motion.div
-                  className="w-full rounded-t-md bg-gradient-to-t from-brand-violet to-brand-cyan"
-                  initial={{ height: 0 }}
-                  animate={{ height: `${(d.value / max) * 120}px` }}
-                  transition={{ duration: 0.6, delay: i * 0.05, ease: EASE_OUT }}
-                />
-                <span className="text-[9px] text-ink-3">{d.label}</span>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {type === "donut" && (
-          <div className="flex items-center gap-6">
-            <svg width="130" height="130" viewBox="0 0 42 42">
-              <circle r="15.9" cx="21" cy="21" fill="transparent" stroke="var(--color-border-strong)" strokeWidth={5} />
-              {(() => {
-                const total = resource.data.reduce((s, d) => s + d.value, 0);
-                let offset = 0;
-                return resource.data.map((d, i) => {
-                  const pct = (d.value / total) * 100;
-                  const seg = (
-                    <motion.circle
-                      key={d.label}
-                      r="15.9"
-                      cx="21"
-                      cy="21"
-                      fill="transparent"
-                      stroke={DONUT_COLORS[i % DONUT_COLORS.length]}
-                      strokeWidth={5}
-                      strokeDasharray={`${pct} ${100 - pct}`}
-                      strokeDashoffset={25 - offset}
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      transition={{ duration: 0.4, delay: i * 0.1 }}
-                    />
-                  );
-                  offset += pct;
-                  return seg;
-                });
-              })()}
-            </svg>
-            <div className="flex flex-col gap-1.5">
-              {resource.data.map((d, i) => (
-                <div key={d.label} className="flex items-center gap-1.5 text-[11px] text-ink-2">
-                  <span
-                    className="h-2 w-2 rounded-full"
-                    style={{ background: DONUT_COLORS[i % DONUT_COLORS.length] }}
-                  />
-                  {d.label}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {type === "table" && (
-          <div className="w-full overflow-hidden rounded-lg border border-border-subtle">
-            <div className="grid grid-cols-2 bg-bg-2 px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-ink-3">
-              <div>Field</div>
-              <div>Sample</div>
-            </div>
-            {resource.fields.map((f) => (
-              <div
-                key={f.key}
-                className="grid grid-cols-2 border-t border-border-subtle px-3 py-2 font-mono text-[11px] text-ink-2"
-              >
-                <div className="truncate text-brand-violet-light">{f.key}</div>
-                <div className="truncate">{f.sample}</div>
-              </div>
-            ))}
-          </div>
+        {type === "table" ? (
+          <TableWidget rows={tableRows} pageSize={tableRows.length} />
+        ) : (
+          <ChartWidget chartKind={type} rows={chartRows} color="#8b5cf6" showLegend={type === "donut"} />
         )}
       </motion.div>
     </AnimatePresence>

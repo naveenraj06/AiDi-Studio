@@ -9,9 +9,9 @@ interface WidgetCardHeaderProps {
 }
 
 /** Icon badge + title + optional subtitle, with an optional slot for right-aligned
- * controls (filter, settings, resize, remove, …) — the standard header every
- * chart/table/list widget card uses above its body. Metric widgets (stat/gauge/
- * sparkline/progress) render their own compact header instead. */
+ * controls (filter, settings, resize, remove, …) — the one card header every widget
+ * type uses above its body, wherever a widget is displayed: the dashboard builder,
+ * published dashboards, and the component gallery/landing page previews. */
 export function WidgetCardHeader({ icon, color, title, subtitle, actions }: WidgetCardHeaderProps) {
   return (
     <div className="mb-2.5 flex items-start justify-between gap-2">
