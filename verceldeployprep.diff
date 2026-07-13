@@ -1,0 +1,230 @@
+diff --git a/README.md b/README.md
+index e2fac57..1045add 100644
+--- a/README.md
++++ b/README.md
+@@ -152,3 +152,67 @@ TOTP/2FA.
+ ## Frontend (`apps/web`)
+ 
+ See `apps/web/README.md`.
++
++## Deploying to Vercel
++
++Each app deploys as its **own Vercel project** against this same repo — a
++monorepo with a browser SPA and a persistent Node server doesn't fit into a
++single Vercel project cleanly, so don't try to combine them.
++
++### 1. `apps/api` — the backend
++
++`apps/api/vercel.json` + `apps/api/api/index.ts` adapt the Fastify app to
++Vercel's serverless Node runtime: `src/app.ts` builds and registers the whole
++app (every plugin and route) without binding a port; `src/server.ts` (local
++dev / `npm run dev`) calls `.listen()` on that; `api/index.ts` instead hands
++Vercel's per-request `req`/`res` straight to Fastify's internal router, and
++the `vercel.json` rewrite sends every path through that one function so no
++route had to move. Nothing about the routes themselves changed.
++
++- **New Project → Import this repo**
++- **Root Directory**: `apps/api`
++- Framework preset: Other (no build step needed — Vercel's Node runtime
++  transpiles `api/index.ts` itself)
++- **Environment variables** (Project Settings → Environment Variables) — same
++  names as `apps/api/.env.example`:
++  - `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`
++  - `CORS_ORIGIN` — the `apps/web` project's deployed URL (e.g.
++    `https://your-frontend.vercel.app`), so the browser can actually call
++    this API cross-origin
++  - `GROQ_API_KEY` / `GROQ_MODEL` — optional, real AI widget suggestions
++    (falls back to the deterministic heuristic without it)
++  - `PORT` isn't used here — Vercel owns the port in serverless
++
++Note: `@fastify/rate-limit`'s in-memory store and any other per-process state
++resets on cold starts and isn't shared across concurrent instances — fine for
++this milestone, but not a substitute for a shared store (e.g. Redis) at
++real scale.
++
++### 2. `apps/web` — the frontend
++
++`apps/web/vercel.json` adds the SPA fallback rewrite every client-side-routed
++app needs on static hosting (react-router-dom otherwise 404s on a hard
++refresh of e.g. `/components`).
++
++- **New Project → Import this repo**
++- **Root Directory**: `apps/web`
++- Framework preset: Vite (auto-detected — build command `npm run build`,
++  output directory `dist`)
++- **Environment variables** — these are baked in at build time, so they must
++  already be set before you deploy, not after:
++  - `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` — same Supabase
++    project as the API
++  - `VITE_API_URL` — the `apps/api` project's deployed URL from step 1
++
++Deploy the API first so you have its URL for `VITE_API_URL`, then deploy the
++frontend, then go back and set the frontend's URL as the API's `CORS_ORIGIN`
++and redeploy the API — the two projects' URLs are circular inputs to each
++other.
++
++Verified locally (this sandbox has no route to Vercel itself, so the actual
++Vercel build wasn't exercised): `apps/api` still builds and boots exactly as
++before (`npm run build && npm run dev`, `/health` and an unauthenticated
++`/auth/me` both respond correctly), and the new serverless entrypoint was
++exercised directly — wrapping `api/index.ts`'s handler in a plain
++`http.createServer` and curling it end-to-end reproduces the same responses,
++including across repeated "warm" invocations of the same handler instance.
+diff --git a/apps/api/api/index.ts b/apps/api/api/index.ts
+new file mode 100644
+index 0000000..5ea6cd5
+--- /dev/null
++++ b/apps/api/api/index.ts
+@@ -0,0 +1,21 @@
++import type { IncomingMessage, ServerResponse } from "node:http";
++import type { FastifyInstance } from "fastify";
++import { buildApp } from "../src/app.js";
++
++// Reused across warm invocations of the same serverless instance — buildApp()
++// only runs again after a cold start, same as any other module-level cache.
++let appPromise: Promise<FastifyInstance> | undefined;
++
++function getApp(): Promise<FastifyInstance> {
++  if (!appPromise) appPromise = buildApp();
++  return appPromise;
++}
++
++/** Vercel's Node runtime calls this per request with plain Node req/res — Fastify
++ * has no server of its own to listen on here, so this hands them straight to its
++ * internal router instead (the standard way to run Fastify on a serverless host). */
++export default async function handler(req: IncomingMessage, res: ServerResponse) {
++  const app = await getApp();
++  await app.ready();
++  app.server.emit("request", req, res);
++}
+diff --git a/apps/api/src/app.ts b/apps/api/src/app.ts
+new file mode 100644
+index 0000000..6fdec17
+--- /dev/null
++++ b/apps/api/src/app.ts
+@@ -0,0 +1,49 @@
++import compress from "@fastify/compress";
++import cors from "@fastify/cors";
++import helmet from "@fastify/helmet";
++import rateLimit from "@fastify/rate-limit";
++import Fastify, { type FastifyInstance } from "fastify";
++import { env } from "./lib/env.js";
++import supabaseAuthPlugin from "./plugins/supabaseAuth.js";
++import billingRoutes from "./routes/billing.js";
++import dashboardRoutes, { publicDashboardRoutes } from "./routes/dashboards.js";
++import projectRoutes from "./routes/projects.js";
++import resourceRoutes from "./routes/resources.js";
++import teamRoutes from "./routes/team.js";
++import widgetRoutes from "./routes/widgets.js";
++
++/** Builds and registers the whole API — every route, plugin, and error handler —
++ * without binding a port. Shared by the local dev entrypoint (server.ts), which
++ * calls .listen() on the result, and the Vercel serverless entrypoint (api/index.ts),
++ * which instead hands the built instance each request directly. */
++export async function buildApp(): Promise<FastifyInstance> {
++  const app = Fastify({ logger: true, trustProxy: true });
++
++  await app.register(helmet);
++  await app.register(compress);
++  await app.register(rateLimit, { max: 100, timeWindow: "1 minute" });
++  await app.register(cors, { origin: env.CORS_ORIGIN, credentials: true });
++  await app.register(supabaseAuthPlugin);
++
++  app.get("/health", async () => ({ ok: true }));
++
++  app.get("/auth/me", { preHandler: app.authenticate }, async (request, reply) => {
++    return reply.send({ user: { id: request.userId, email: request.userEmail, name: request.userName } });
++  });
++
++  await app.register(projectRoutes);
++  await app.register(resourceRoutes);
++  await app.register(widgetRoutes);
++  await app.register(dashboardRoutes);
++  await app.register(publicDashboardRoutes);
++  await app.register(teamRoutes);
++  await app.register(billingRoutes);
++
++  app.setErrorHandler((error: Error & { statusCode?: number }, _request, reply) => {
++    app.log.error(error);
++    const statusCode = error.statusCode ?? 500;
++    reply.code(statusCode).send({ error: statusCode === 500 ? "Internal server error" : error.message });
++  });
++
++  return app;
++}
+diff --git a/apps/api/src/server.ts b/apps/api/src/server.ts
+index 9384046..d133f46 100644
+--- a/apps/api/src/server.ts
++++ b/apps/api/src/server.ts
+@@ -1,44 +1,7 @@
+-import compress from "@fastify/compress";
+-import cors from "@fastify/cors";
+-import helmet from "@fastify/helmet";
+-import rateLimit from "@fastify/rate-limit";
+-import Fastify from "fastify";
++import { buildApp } from "./app.js";
+ import { env } from "./lib/env.js";
+-import supabaseAuthPlugin from "./plugins/supabaseAuth.js";
+-import billingRoutes from "./routes/billing.js";
+-import dashboardRoutes, { publicDashboardRoutes } from "./routes/dashboards.js";
+-import projectRoutes from "./routes/projects.js";
+-import resourceRoutes from "./routes/resources.js";
+-import teamRoutes from "./routes/team.js";
+-import widgetRoutes from "./routes/widgets.js";
+ 
+-const app = Fastify({ logger: true, trustProxy: true });
+-
+-await app.register(helmet);
+-await app.register(compress);
+-await app.register(rateLimit, { max: 100, timeWindow: "1 minute" });
+-await app.register(cors, { origin: env.CORS_ORIGIN, credentials: true });
+-await app.register(supabaseAuthPlugin);
+-
+-app.get("/health", async () => ({ ok: true }));
+-
+-app.get("/auth/me", { preHandler: app.authenticate }, async (request, reply) => {
+-  return reply.send({ user: { id: request.userId, email: request.userEmail, name: request.userName } });
+-});
+-
+-await app.register(projectRoutes);
+-await app.register(resourceRoutes);
+-await app.register(widgetRoutes);
+-await app.register(dashboardRoutes);
+-await app.register(publicDashboardRoutes);
+-await app.register(teamRoutes);
+-await app.register(billingRoutes);
+-
+-app.setErrorHandler((error: Error & { statusCode?: number }, _request, reply) => {
+-  app.log.error(error);
+-  const statusCode = error.statusCode ?? 500;
+-  reply.code(statusCode).send({ error: statusCode === 500 ? "Internal server error" : error.message });
+-});
++const app = await buildApp();
+ 
+ try {
+   await app.listen({ port: env.PORT, host: "0.0.0.0" });
+diff --git a/apps/api/vercel.json b/apps/api/vercel.json
+new file mode 100644
+index 0000000..f9d54fa
+--- /dev/null
++++ b/apps/api/vercel.json
+@@ -0,0 +1,9 @@
++{
++  "$schema": "https://openapi.vercel.sh/vercel.json",
++  "functions": {
++    "api/index.ts": {
++      "maxDuration": 30
++    }
++  },
++  "rewrites": [{ "source": "/(.*)", "destination": "/api" }]
++}
+diff --git a/apps/web/vercel.json b/apps/web/vercel.json
+new file mode 100644
+index 0000000..7eb07db
+--- /dev/null
++++ b/apps/web/vercel.json
+@@ -0,0 +1,4 @@
++{
++  "$schema": "https://openapi.vercel.sh/vercel.json",
++  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
++}

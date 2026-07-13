@@ -152,3 +152,67 @@ TOTP/2FA.
 ## Frontend (`apps/web`)
 
 See `apps/web/README.md`.
+
+## Deploying to Vercel
+
+Each app deploys as its **own Vercel project** against this same repo — a
+monorepo with a browser SPA and a persistent Node server doesn't fit into a
+single Vercel project cleanly, so don't try to combine them.
+
+### 1. `apps/api` — the backend
+
+`apps/api/vercel.json` + `apps/api/api/index.ts` adapt the Fastify app to
+Vercel's serverless Node runtime: `src/app.ts` builds and registers the whole
+app (every plugin and route) without binding a port; `src/server.ts` (local
+dev / `npm run dev`) calls `.listen()` on that; `api/index.ts` instead hands
+Vercel's per-request `req`/`res` straight to Fastify's internal router, and
+the `vercel.json` rewrite sends every path through that one function so no
+route had to move. Nothing about the routes themselves changed.
+
+- **New Project → Import this repo**
+- **Root Directory**: `apps/api`
+- Framework preset: Other (no build step needed — Vercel's Node runtime
+  transpiles `api/index.ts` itself)
+- **Environment variables** (Project Settings → Environment Variables) — same
+  names as `apps/api/.env.example`:
+  - `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`
+  - `CORS_ORIGIN` — the `apps/web` project's deployed URL (e.g.
+    `https://your-frontend.vercel.app`), so the browser can actually call
+    this API cross-origin
+  - `GROQ_API_KEY` / `GROQ_MODEL` — optional, real AI widget suggestions
+    (falls back to the deterministic heuristic without it)
+  - `PORT` isn't used here — Vercel owns the port in serverless
+
+Note: `@fastify/rate-limit`'s in-memory store and any other per-process state
+resets on cold starts and isn't shared across concurrent instances — fine for
+this milestone, but not a substitute for a shared store (e.g. Redis) at
+real scale.
+
+### 2. `apps/web` — the frontend
+
+`apps/web/vercel.json` adds the SPA fallback rewrite every client-side-routed
+app needs on static hosting (react-router-dom otherwise 404s on a hard
+refresh of e.g. `/components`).
+
+- **New Project → Import this repo**
+- **Root Directory**: `apps/web`
+- Framework preset: Vite (auto-detected — build command `npm run build`,
+  output directory `dist`)
+- **Environment variables** — these are baked in at build time, so they must
+  already be set before you deploy, not after:
+  - `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` — same Supabase
+    project as the API
+  - `VITE_API_URL` — the `apps/api` project's deployed URL from step 1
+
+Deploy the API first so you have its URL for `VITE_API_URL`, then deploy the
+frontend, then go back and set the frontend's URL as the API's `CORS_ORIGIN`
+and redeploy the API — the two projects' URLs are circular inputs to each
+other.
+
+Verified locally (this sandbox has no route to Vercel itself, so the actual
+Vercel build wasn't exercised): `apps/api` still builds and boots exactly as
+before (`npm run build && npm run dev`, `/health` and an unauthenticated
+`/auth/me` both respond correctly), and the new serverless entrypoint was
+exercised directly — wrapping `api/index.ts`'s handler in a plain
+`http.createServer` and curling it end-to-end reproduces the same responses,
+including across repeated "warm" invocations of the same handler instance.
