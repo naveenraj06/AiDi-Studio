@@ -30,7 +30,11 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ProductDemo } from "@/components/landing/ProductDemo";
+import { WidgetSampleCard } from "@/components/widgets/WidgetSampleCard";
+import type { WidgetType } from "@/types";
 import { cn } from "@/lib/utils";
+
+const SHOWCASE_TYPES: WidgetType[] = ["line", "bar", "donut", "gauge", "table", "map", "progress", "tabs"];
 
 const STEPS = [
   {
@@ -60,7 +64,7 @@ const FEATURES = [
   {
     icon: Sparkles,
     title: "AI widget suggestions",
-    body: "Every connected resource gets a suggested chart type and field mapping — line, bar, stat, table, donut, or map — based on the shape of its response.",
+    body: "Every connected resource gets a suggested component and field mapping — from 24 chart, metric, data, and layout types — based on the shape of its response.",
     span: "lg:col-span-3 lg:row-span-2",
     visual: "suggest" as const,
   },
@@ -132,7 +136,7 @@ const PLANS = [
 
 const HIGHLIGHTS = [
   { icon: ShieldCheck, label: "GET-only · sandboxed" },
-  { icon: Grid3x3, label: "6 widget types" },
+  { icon: Grid3x3, label: "24 component types" },
   { icon: Users, label: "Role-based access" },
   { icon: KeyRound, label: "Password-protected shares" },
 ];
@@ -533,6 +537,9 @@ export default function LandingPage() {
             <button onClick={() => scrollTo("features")} className="cursor-pointer text-[13px] text-ink-2 hover:text-ink-1">
               Features
             </button>
+            <button onClick={() => navigate("/components")} className="cursor-pointer text-[13px] text-ink-2 hover:text-ink-1">
+              Components
+            </button>
             <button onClick={() => scrollTo("pricing")} className="cursor-pointer text-[13px] text-ink-2 hover:text-ink-1">
               Pricing
             </button>
@@ -765,6 +772,40 @@ export default function LandingPage() {
       </motion.div>
 
       <motion.div
+        initial="hidden"
+        whileInView="visible"
+        viewport={{ once: true, margin: "-100px" }}
+        variants={staggerContainer}
+        className="mx-auto max-w-[1080px] scroll-mt-24 px-6 pt-[140px]"
+      >
+        <motion.div variants={fadeUp} className="mb-[56px] text-center">
+          <div className="mb-2 text-[12px] font-bold uppercase tracking-[0.08em] text-brand-violet-light">
+            Component library
+          </div>
+          <div className="font-display text-[32px] font-bold">24 components, ready to drop in</div>
+          <div className="mx-auto mt-2.5 max-w-[520px] text-[14px] leading-[1.6] text-ink-2">
+            Charts, metrics, data, and layout components — each one binds to a live resource or works as a
+            standalone dashboard tile.
+          </div>
+        </motion.div>
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          {SHOWCASE_TYPES.map((t) => (
+            <motion.div key={t} variants={fadeUp}>
+              <SpotlightCard className="h-full p-4">
+                <WidgetSampleCard type={t} height={140} />
+              </SpotlightCard>
+            </motion.div>
+          ))}
+        </div>
+        <motion.div variants={fadeUp} className="mt-[34px] text-center">
+          <Button variant="outline" onClick={() => navigate("/components")} className="group px-[22px] py-[11px] text-[13px]">
+            Browse all 24 components
+            <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+          </Button>
+        </motion.div>
+      </motion.div>
+
+      <motion.div
         id="pricing"
         initial="hidden"
         whileInView="visible"
@@ -862,6 +903,9 @@ export default function LandingPage() {
           </button>
           <button onClick={() => scrollTo("features")} className="cursor-pointer text-ink-3 hover:text-ink-2">
             Features
+          </button>
+          <button onClick={() => navigate("/components")} className="cursor-pointer text-ink-3 hover:text-ink-2">
+            Components
           </button>
           <button onClick={() => scrollTo("pricing")} className="cursor-pointer text-ink-3 hover:text-ink-2">
             Pricing
