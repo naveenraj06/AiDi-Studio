@@ -221,6 +221,7 @@ export default function WidgetBuilderPage() {
           type={chosenType}
           ft={ft}
           resources={resources ?? []}
+          mapping={mapping}
           onChange={updateFt}
           onBack={backToStep2}
           onNext={() => setStep(4)}

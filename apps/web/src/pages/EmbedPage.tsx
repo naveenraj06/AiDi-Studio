@@ -3,11 +3,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useGetProjectQuery } from "@/store/api/projectsApi";
 import { useGetDashboardsQuery } from "@/store/api/dashboardsApi";
 
-const API_ROWS = [
-  { method: "GET", path: "/api/public/d/:slug" },
-  { method: "GET", path: "/api/public/d/:slug/widgets/:widgetId/data" },
-  { method: "POST", path: "/api/public/d/:slug/unlock" },
-];
+const API_ROWS = [{ method: "GET", path: "/public/dashboards/:slug" }];
 
 export default function EmbedPage() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -94,7 +90,11 @@ export default function EmbedPage() {
         </div>
         <div className="mb-2.5 text-[12px] text-ink-2">2. Mount the component</div>
         <div className="whitespace-pre-wrap rounded-sm border border-border-subtle bg-surface-sunken px-3 py-2.5 font-mono text-[12px] text-ink-3">
-          {`import { AidiDashboard } from '@aidistudio/embed';\n\n<AidiDashboard token="YOUR_PUBLIC_TOKEN" dashboardId="${firstSlug}" />`}
+          {`import { AidiDashboard } from '@aidistudio/embed';\n\n<AidiDashboard baseUrl="${window.location.origin}" dashboardId="${firstSlug}" />`}
+        </div>
+        <div className="mt-2.5 text-[11px] text-ink-3">
+          Renders the same iframe as the snippet above — no API credentials ever reach the embedding page. Add a{" "}
+          <span className="font-mono">password</span> prop for password-protected dashboards.
         </div>
       </div>
 

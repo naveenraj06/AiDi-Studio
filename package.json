@@ -6,7 +6,7 @@
   "workspaces": [
     "apps/web",
     "apps/api",
-    "packages/chart-utils"
+    "packages/*"
   ],
   "scripts": {
     "setup": "node scripts/setup-supabase.js",

@@ -127,6 +127,9 @@ export interface WidgetFineTune {
   // Line/area/bar/stacked-bar/scatter: gridlines and axis tick labels.
   showGrid?: boolean;
   showAxisLabels?: boolean;
+  // Axis titles — default to the mapped field's name (humanized), overridable here.
+  xAxisLabel?: string;
+  yAxisLabel?: string;
   // Line/area: curved ("monotone") vs straight ("linear") segments.
   smoothLine?: boolean;
   // Donut: render with no center hole (a solid pie).

@@ -107,6 +107,8 @@ function renderWidget(
           chartKind={type}
           rows={rows}
           mapping={mapping}
+          xAxisLabel={ft.xAxisLabel}
+          yAxisLabel={ft.yAxisLabel}
           color={color}
           showLegend={ft.showLegend ?? true}
           showPoints={ft.showPoints ?? true}

@@ -25,7 +25,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { nameAxis } from "@aidi-studio/chart-utils";
+import { nameAxis } from "@/lib/axisName";
 import type { ChartWidgetType, FieldMapping } from "@/types";
 import type { ShapedRow } from "@/lib/shapeWidgetData";
 
@@ -37,6 +37,10 @@ interface ChartWidgetProps {
   chartKind: ChartWidgetType;
   rows: ShapedRow[];
   mapping?: FieldMapping[] | null;
+  /** Manual axis title overrides from the widget's fine-tune config — win over the
+   * auto-derived name from `mapping` when set. */
+  xAxisLabel?: string;
+  yAxisLabel?: string;
   color?: string;
   showLegend?: boolean;
   showPoints?: boolean;
@@ -48,14 +52,15 @@ interface ChartWidgetProps {
   asPie?: boolean;
 }
 
-/** Human-readable axis titles derived from the resource fields mapped to x-axis/y-axis,
- * e.g. "revenue_usd" -> "Revenue USD" — undefined (no title shown) when nothing is mapped. */
-function axisTitles(mapping: FieldMapping[] | null | undefined) {
+/** Human-readable axis titles: a manual override if one was set in the fine-tune config,
+ * otherwise derived from the resource field mapped to x-axis/y-axis, e.g. "revenue_usd" ->
+ * "Revenue USD" — undefined (no title shown) when nothing is mapped or overridden. */
+function axisTitles(mapping: FieldMapping[] | null | undefined, xOverride?: string, yOverride?: string) {
   const xField = mapping?.find((m) => m.role === "x-axis")?.field;
   const yField = mapping?.find((m) => m.role === "y-axis")?.field;
   return {
-    x: xField ? nameAxis(xField) : undefined,
-    y: yField ? nameAxis(yField) : undefined,
+    x: xOverride?.trim() || (xField ? nameAxis(xField) : undefined),
+    y: yOverride?.trim() || (yField ? nameAxis(yField) : undefined),
   };
 }
 
@@ -81,6 +86,8 @@ export function ChartWidget({
   chartKind,
   rows,
   mapping,
+  xAxisLabel,
+  yAxisLabel,
   color = "#8b5cf6",
   showLegend = true,
   showPoints = true,
@@ -96,7 +103,7 @@ export function ChartWidget({
   }
 
   const axisTick = showAxisLabels ? AXIS_STYLE : false;
-  const titles = showAxisLabels ? axisTitles(mapping) : { x: undefined, y: undefined };
+  const titles = showAxisLabels ? axisTitles(mapping, xAxisLabel, yAxisLabel) : { x: undefined, y: undefined };
   // Label shape depends on which physical axis (horizontal vs vertical) it's attached to,
   // not on which data role it carries — a horizontal bar chart's numeric axis renders along
   // the bottom (y-axis role) while its category axis renders along the left (x-axis role).

@@ -1,5 +1,6 @@
-import type { ApiResource, WidgetFineTune, WidgetType } from "@/types";
+import type { ApiResource, FieldMapping, WidgetFineTune, WidgetType } from "@/types";
 import { CHART_TYPES, METRIC_TYPES, requiresResource } from "@/components/widgets/widgetTypeMeta";
+import { nameAxis } from "@/lib/axisName";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,6 +21,7 @@ interface Step3FineTuneProps {
   type: WidgetType;
   ft: WidgetFineTune;
   resources: ApiResource[];
+  mapping: FieldMapping[];
   onChange: (patch: Partial<WidgetFineTune>) => void;
   onBack: () => void;
   onNext: () => void;
@@ -29,7 +31,7 @@ function numberOrUndefined(raw: string): number | undefined {
   return raw === "" ? undefined : Number(raw);
 }
 
-export function Step3FineTune({ type, ft, resources, onChange, onBack, onNext }: Step3FineTuneProps) {
+export function Step3FineTune({ type, ft, resources, mapping, onChange, onBack, onNext }: Step3FineTuneProps) {
   const isChart = (CHART_TYPES as WidgetType[]).includes(type);
   const isMetric = (METRIC_TYPES as WidgetType[]).includes(type);
   const isRangeMetric = type === "gauge" || type === "progress";
@@ -38,6 +40,8 @@ export function Step3FineTune({ type, ft, resources, onChange, onBack, onNext }:
   const isBar = type === "bar" || type === "stacked-bar";
   const isCartesian = isBar || type === "line" || type === "area" || type === "scatter";
   const isLineOrArea = type === "line" || type === "area";
+  const mappedXField = mapping.find((m) => m.role === "x-axis")?.field;
+  const mappedYField = mapping.find((m) => m.role === "y-axis")?.field;
 
   return (
     <div>
@@ -105,6 +109,28 @@ export function Step3FineTune({ type, ft, resources, onChange, onBack, onNext }:
                   <span className="text-[13px] text-ink-1">Show axis labels</span>
                   <Switch checked={ft.showAxisLabels ?? true} onCheckedChange={(v) => onChange({ showAxisLabels: v })} />
                 </div>
+                {(ft.showAxisLabels ?? true) && (
+                  <div className="grid grid-cols-2 gap-3 border-t border-border-subtle pt-3.5">
+                    <div>
+                      <Label htmlFor="widget-x-axis-label">X-axis title</Label>
+                      <Input
+                        id="widget-x-axis-label"
+                        value={ft.xAxisLabel ?? ""}
+                        onChange={(e) => onChange({ xAxisLabel: e.target.value })}
+                        placeholder={mappedXField ? nameAxis(mappedXField) : "Auto"}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="widget-y-axis-label">Y-axis title</Label>
+                      <Input
+                        id="widget-y-axis-label"
+                        value={ft.yAxisLabel ?? ""}
+                        onChange={(e) => onChange({ yAxisLabel: e.target.value })}
+                        placeholder={mappedYField ? nameAxis(mappedYField) : "Auto"}
+                      />
+                    </div>
+                  </div>
+                )}
               </>
             )}
             {isLineOrArea && (
