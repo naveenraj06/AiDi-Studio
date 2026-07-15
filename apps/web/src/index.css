@@ -163,6 +163,73 @@
   }
 }
 
+/* Prose styling for long-form legal documents (Privacy Policy, Terms of Service) —
+   content is authored as plain h2/p/ul/table markup, scoped here rather than
+   repeating utility classes on every element across two long documents. */
+.legal-doc h2 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 19px;
+  letter-spacing: -0.01em;
+  margin: 32px 0 10px;
+  color: var(--color-ink-1);
+}
+.legal-doc h2:first-child {
+  margin-top: 0;
+}
+.legal-doc p,
+.legal-doc li,
+.legal-doc td,
+.legal-doc th {
+  font-size: 15px;
+  color: var(--color-ink-2);
+  line-height: 1.65;
+}
+.legal-doc p {
+  margin-bottom: 12px;
+}
+.legal-doc ul {
+  margin: 0 0 12px 22px;
+}
+.legal-doc li {
+  margin-bottom: 7px;
+}
+.legal-doc strong {
+  font-weight: 600;
+  color: var(--color-ink-1);
+}
+.legal-doc a {
+  color: var(--color-brand-violet-light);
+}
+.legal-doc table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  margin: 6px 0 16px;
+  font-size: 14px;
+}
+.legal-doc th,
+.legal-doc td {
+  padding: 10px 14px;
+  text-align: left;
+  border-bottom: 1px solid var(--color-border-subtle);
+  vertical-align: top;
+}
+.legal-doc th {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: var(--color-bg-2);
+  color: var(--color-ink-3);
+}
+.legal-doc tr:last-child td {
+  border-bottom: 0;
+}
+
 @keyframes aidi-spin {
   to {
     transform: rotate(360deg);

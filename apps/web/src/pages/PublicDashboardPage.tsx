@@ -1,5 +1,5 @@
 import * as React from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import { useGetPublicDashboardQuery } from "@/store/api/publicDashboardApi";
 import type { AxiosBaseQueryError } from "@/store/axiosBaseQuery";
 import { deriveLiveSource } from "@/lib/liveData";
@@ -19,9 +19,12 @@ function NotAvailable() {
 
 export default function PublicDashboardPage() {
   const { slug } = useParams<{ slug: string }>();
+  // Lets an embedding page (e.g. the @aidistudio/embed SDK's `password` prop) pass the
+  // share password straight through the iframe URL instead of showing the unlock form.
+  const [searchParams] = useSearchParams();
 
   const [pw, setPw] = React.useState("");
-  const [submittedPassword, setSubmittedPassword] = React.useState<string | undefined>(undefined);
+  const [submittedPassword, setSubmittedPassword] = React.useState<string | undefined>(searchParams.get("password") ?? undefined);
   const [wrongPassword, setWrongPassword] = React.useState(false);
 
   const { data: dashboard, isLoading, error } = useGetPublicDashboardQuery(

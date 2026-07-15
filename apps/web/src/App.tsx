@@ -1,5 +1,5 @@
 import * as React from "react";
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { RequireAuth, PublicOnly } from "@/routes/guards";
 import { ToastViewport } from "@/components/ui/toast";
 import { useAppSelector } from "@/store/hooks";
@@ -25,6 +25,9 @@ import BillingPage from "@/pages/BillingPage";
 
 import PublicDashboardPage from "@/pages/PublicDashboardPage";
 import ComponentsGalleryPage from "@/pages/ComponentsGalleryPage";
+import PricingPage from "@/pages/PricingPage";
+import PrivacyPolicyPage from "@/pages/PrivacyPolicyPage";
+import TermsPage from "@/pages/TermsPage";
 
 function ThemeEffect() {
   const theme = useAppSelector((s) => s.ui.theme);
@@ -34,10 +37,21 @@ function ThemeEffect() {
   return null;
 }
 
+/** Resets scroll to the top of the page on every route change — without this, navigating
+ * to a new page keeps the scroll offset from wherever the previous page was left. */
+function ScrollToTop() {
+  const { pathname } = useLocation();
+  React.useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [pathname]);
+  return null;
+}
+
 function App() {
   return (
     <BrowserRouter>
       <ThemeEffect />
+      <ScrollToTop />
       <Routes>
         <Route path="/" element={<Navigate to="/landing" replace />} />
 
@@ -55,6 +69,9 @@ function App() {
         <Route path="/d/:slug/embed" element={<PublicDashboardPage />} />
 
         <Route path="/components" element={<ComponentsGalleryPage />} />
+        <Route path="/pricing" element={<PricingPage />} />
+        <Route path="/privacy" element={<PrivacyPolicyPage />} />
+        <Route path="/terms" element={<TermsPage />} />
 
         <Route element={<RequireAuth />}>
           <Route element={<AppShell />}>
