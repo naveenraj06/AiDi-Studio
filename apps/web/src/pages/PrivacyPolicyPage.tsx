@@ -7,13 +7,6 @@ export default function PrivacyPolicyPage() {
       title="Privacy Policy"
       updated="[DATE]"
       crossLink={{ label: "Terms of Service", to: "/terms" }}
-      notice={
-        <>
-          Template notice: this document is a starting draft, not legal advice. Confirm every disclosure
-          matches your live infrastructure, fill in the [BRACKETED] placeholders, and have it reviewed by a
-          qualified lawyer — especially if you serve users in the EU/EEA, UK, or California.
-        </>
-      }
     >
       <h2>1. Who We Are</h2>
       <p>
@@ -65,10 +58,7 @@ export default function PrivacyPolicyPage() {
               <strong>Fetched API data</strong>
             </td>
             <td>Responses returned by the APIs you connect</td>
-            <td>
-              Rendered to display your widgets; proxied live, not stored as a copy of record [CONFIRM if
-              caching is added later]
-            </td>
+            <td>Rendered to display your widgets; proxied live, not stored as a copy of record</td>
           </tr>
           <tr>
             <td>
@@ -154,8 +144,7 @@ export default function PrivacyPolicyPage() {
       </table>
       <p>
         These providers may store data in the United States or other countries. Where required, transfers
-        rely on appropriate safeguards such as Standard Contractual Clauses. [CONFIRM your Supabase project
-        region and state it here, e.g., "Our primary database is hosted in the AWS ___ region."]
+        rely on appropriate safeguards such as Standard Contractual Clauses.
       </p>
 
       <h2>6. Published Dashboards Are Public</h2>
@@ -197,8 +186,7 @@ export default function PrivacyPolicyPage() {
       <h2>10. Cookies</h2>
       <p>
         We use only strictly necessary cookies/local storage: your session token and interface preferences.
-        We do not use advertising or cross-site tracking cookies. [UPDATE this section if you add analytics —
-        name the tool and its cookies.]
+        We do not use advertising or cross-site tracking cookies.
       </p>
 
       <h2>11. Children</h2>

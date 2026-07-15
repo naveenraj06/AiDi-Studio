@@ -3,19 +3,17 @@ import { Link } from "react-router-dom";
 import { MarketingHeader } from "@/components/marketing/MarketingHeader";
 
 /** Shared chrome for the Privacy Policy and Terms of Service pages — both documents share
- * the same eyebrow/title/updated-date/notice layout, just with different body sections. */
+ * the same eyebrow/title/updated-date layout, just with different body sections. */
 export function LegalDoc({
   eyebrow,
   title,
   updated,
-  notice,
   crossLink,
   children,
 }: {
   eyebrow: string;
   title: string;
   updated: string;
-  notice: React.ReactNode;
   crossLink: { label: string; to: string };
   children: React.ReactNode;
 }) {
@@ -33,11 +31,7 @@ export function LegalDoc({
           </h1>
           <div className="mt-2 font-mono text-[13px] text-ink-3">Last updated: {updated}</div>
 
-          <div className="mt-8 rounded-lg border border-dashed border-border-strong border-l-[3px] border-l-brand-violet bg-brand-violet/5 px-[18px] py-3.5 text-[13.5px] leading-[1.6] text-ink-2">
-            {notice}
-          </div>
-
-          <div className="legal-doc mt-6">{children}</div>
+          <div className="legal-doc mt-8">{children}</div>
         </article>
 
         <div className="mt-8 text-center font-mono text-[13px] text-ink-3">

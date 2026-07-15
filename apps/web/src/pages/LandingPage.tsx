@@ -126,28 +126,25 @@ const PLANS = [
   {
     name: "Free",
     price: "$0",
-    tagline: "Kick the tires",
-    features: ["1 project", "3 dashboards", "10 widgets"],
+    per: "/ forever",
+    tagline: "Build and publish, solo",
+    features: ["2 projects, 3 published dashboards", "All 22 widget types + AI suggestions", "Public share links & iframe embed"],
   },
   {
     name: "Pro",
-    price: "$29",
-    tagline: "For growing teams",
-    features: ["5 projects", "Unlimited dashboards", "Unlimited widgets"],
+    price: "$9",
+    per: "/ month",
+    tagline: "For the solo builder",
+    features: ["Unlimited projects & dashboards", "Bulk import — Postman, OpenAPI, cURL", "Native JS / SDK embed"],
     highlight: true,
     badge: "Most popular",
   },
   {
-    name: "Team",
-    price: "$49",
-    tagline: "Built for collaboration",
-    features: ["Unlimited projects", "Role-based access", "Priority support"],
-  },
-  {
-    name: "Enterprise",
-    price: "Custom",
-    tagline: "Security & scale",
-    features: ["SSO/SAML", "Audit logs", "Dedicated support"],
+    name: "Org",
+    price: "$25",
+    per: "/ month",
+    tagline: "One org, unlimited members",
+    features: ["Everything in Pro", "Unlimited members, flat price", "Shared projects & roles"],
   },
 ];
 
@@ -923,7 +920,7 @@ export default function LandingPage() {
           </div>
           <div className="font-display text-[32px] font-bold">Start free, upgrade when you outgrow it</div>
         </motion.div>
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4 lg:items-center">
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-3 lg:items-center">
           {PLANS.map((pl) => (
             <motion.div
               key={pl.name}
@@ -951,7 +948,7 @@ export default function LandingPage() {
               <div className="mt-1 text-[11px] text-ink-3">{pl.tagline}</div>
               <div className="font-display my-3 text-[28px] font-extrabold text-ink-1">
                 {pl.price}
-                {pl.price !== "Custom" && <span className="text-[12px] font-normal text-ink-3">/seat</span>}
+                <span className="text-[12px] font-normal text-ink-3">{pl.per}</span>
               </div>
               <div className="flex flex-col gap-2">
                 {pl.features.map((feat) => (
@@ -963,6 +960,12 @@ export default function LandingPage() {
             </motion.div>
           ))}
         </div>
+        <motion.div variants={fadeUp} className="mt-9 text-center">
+          <Button variant="outline" onClick={() => navigate("/pricing")} className="group px-[22px] py-[11px] text-[13px]">
+            Compare all plans in detail
+            <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+          </Button>
+        </motion.div>
       </motion.div>
 
       <motion.div

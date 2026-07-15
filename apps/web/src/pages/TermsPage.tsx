@@ -7,12 +7,6 @@ export default function TermsPage() {
       title="Terms of Service"
       updated="[DATE]"
       crossLink={{ label: "Privacy Policy", to: "/privacy" }}
-      notice={
-        <>
-          Template notice: this document is a starting draft, not legal advice. Have it reviewed by a
-          qualified lawyer in your jurisdiction before publishing, and fill in every [BRACKETED] placeholder.
-        </>
-      }
     >
       <h2>1. Agreement</h2>
       <p>
