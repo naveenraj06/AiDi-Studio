@@ -25,6 +25,9 @@ import BillingPage from "@/pages/BillingPage";
 
 import PublicDashboardPage from "@/pages/PublicDashboardPage";
 import ComponentsGalleryPage from "@/pages/ComponentsGalleryPage";
+import PricingPage from "@/pages/PricingPage";
+import PrivacyPolicyPage from "@/pages/PrivacyPolicyPage";
+import TermsPage from "@/pages/TermsPage";
 
 function ThemeEffect() {
   const theme = useAppSelector((s) => s.ui.theme);
@@ -55,6 +58,9 @@ function App() {
         <Route path="/d/:slug/embed" element={<PublicDashboardPage />} />
 
         <Route path="/components" element={<ComponentsGalleryPage />} />
+        <Route path="/pricing" element={<PricingPage />} />
+        <Route path="/privacy" element={<PrivacyPolicyPage />} />
+        <Route path="/terms" element={<TermsPage />} />
 
         <Route element={<RequireAuth />}>
           <Route element={<AppShell />}>

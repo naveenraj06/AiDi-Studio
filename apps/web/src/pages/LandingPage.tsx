@@ -1014,12 +1014,12 @@ export default function LandingPage() {
           <button onClick={() => scrollTo("pricing")} className="cursor-pointer text-ink-3 hover:text-ink-2">
             Pricing
           </button>
-          <a href="#" className="text-ink-3 hover:text-ink-2">
+          <button onClick={() => navigate("/terms")} className="cursor-pointer text-ink-3 hover:text-ink-2">
             Terms
-          </a>
-          <a href="#" className="text-ink-3 hover:text-ink-2">
+          </button>
+          <button onClick={() => navigate("/privacy")} className="cursor-pointer text-ink-3 hover:text-ink-2">
             Privacy
-          </a>
+          </button>
         </div>
       </div>
     </div>
