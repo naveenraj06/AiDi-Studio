@@ -21,7 +21,7 @@ export function LegalDoc({
     <div className="min-h-screen bg-bg-0 text-ink-1">
       <MarketingHeader />
 
-      <div className="mx-auto max-w-[820px] px-6 pb-[110px] pt-[56px]">
+      <div className="mx-auto max-w-[1080px] px-6 pb-[110px] pt-[56px]">
         <article className="rounded-2xl border border-border-default bg-bg-1 p-8 shadow-md sm:p-12">
           <div className="font-mono text-[12px] font-semibold uppercase tracking-[0.08em] text-brand-violet-light">
             {eyebrow}
