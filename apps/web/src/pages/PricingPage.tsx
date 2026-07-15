@@ -4,7 +4,6 @@ import { useNavigate } from "react-router-dom";
 import { Check, X } from "lucide-react";
 import { MarketingHeader } from "@/components/marketing/MarketingHeader";
 import { Button } from "@/components/ui/button";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 
 type Mode = "solo" | "team";
@@ -16,7 +15,7 @@ interface Feature {
 
 const FREE_FEATURES: Feature[] = [
   { text: <><strong>Unlimited API resources</strong>, added manually</> },
-  { text: <>All <strong>22 widget types</strong> + AI suggestions</> },
+  { text: <>All <strong>widget types</strong> + AI suggestions</> },
   { text: <>Up to <strong>2 projects</strong>, <strong>3 published dashboards</strong></> },
   { text: "Public share links & password protection" },
   { text: "Embed anywhere via iframe" },
@@ -92,25 +91,51 @@ const RULES = [
   },
 ];
 
-const COMPARE_ROWS: { feature: string; free: string; pro: string; org: string }[] = [
-  { feature: "Price", free: "$0", pro: "$9/mo", org: "$25/mo" },
-  { feature: "API resources (manual add)", free: "Unlimited", pro: "Unlimited", org: "Unlimited" },
-  { feature: "Widget types + AI suggestion", free: "All 22", pro: "All 22", org: "All 22" },
-  { feature: "Projects", free: "2", pro: "Unlimited", org: "Unlimited" },
-  { feature: "Published dashboards", free: "3", pro: "Unlimited", org: "Unlimited" },
-  { feature: "Public links & iframe embed", free: "✓", pro: "✓", org: "✓" },
-  { feature: "Bulk import (Postman / OpenAPI / cURL)", free: "—", pro: "✓", org: "✓" },
-  { feature: "JS / SDK embed", free: "—", pro: "✓", org: "✓" },
-  { feature: "Members", free: "1", pro: "1", org: "Unlimited" },
-  { feature: "Collaborate on projects", free: "—", pro: "—", org: "✓ org-wide" },
-  { feature: "Roles (owner / editor / viewer)", free: "—", pro: "—", org: "✓" },
-  { feature: "Org creation", free: "—", pro: "—", org: "Company email" },
+interface CompareRow {
+  feature: string;
+  free: string;
+  pro: string;
+  org: string;
+}
+
+const COMPARE_GROUPS: { label: string; rows: CompareRow[] }[] = [
+  {
+    label: "Usage",
+    rows: [
+      { feature: "API resources (manual add)", free: "Unlimited", pro: "Unlimited", org: "Unlimited" },
+      { feature: "Widget types + AI suggestions", free: "Full library", pro: "Full library", org: "Full library" },
+      { feature: "Projects", free: "2", pro: "Unlimited", org: "Unlimited" },
+      { feature: "Published dashboards", free: "3", pro: "Unlimited", org: "Unlimited" },
+    ],
+  },
+  {
+    label: "Sharing & embedding",
+    rows: [
+      { feature: "Public links & iframe embed", free: "yes", pro: "yes", org: "yes" },
+      { feature: "Bulk import (Postman / OpenAPI / cURL)", free: "no", pro: "yes", org: "yes" },
+      { feature: "JS / SDK embed", free: "no", pro: "yes", org: "yes" },
+    ],
+  },
+  {
+    label: "Collaboration",
+    rows: [
+      { feature: "Members", free: "1", pro: "1", org: "Unlimited" },
+      { feature: "Collaborate on projects", free: "no", pro: "no", org: "Org-wide" },
+      { feature: "Roles (owner / editor / viewer)", free: "no", pro: "no", org: "yes" },
+      { feature: "Org creation", free: "no", pro: "no", org: "Requires company email" },
+    ],
+  },
 ];
 
-function compareCellClass(value: string) {
-  if (value === "—") return "text-ink-3 opacity-45";
-  if (value.includes("✓") || value === "Unlimited" || value === "All 22") return "font-semibold text-brand-green";
-  return "";
+function CompareCell({ value }: { value: string }) {
+  if (value === "yes") return <Check className="mx-auto h-4 w-4 text-brand-green" />;
+  if (value === "no") return <X className="mx-auto h-4 w-4 text-ink-3 opacity-40" />;
+  const isPositive = value === "Unlimited" || value === "Full library" || value === "Org-wide";
+  return (
+    <span className={cn("font-mono text-[13px]", isPositive ? "font-semibold text-brand-green" : "text-ink-2")}>
+      {value}
+    </span>
+  );
 }
 
 function FeatureList({ features }: { features: Feature[] }) {
@@ -268,26 +293,58 @@ export default function PricingPage() {
 
         <section className="mt-[74px]">
           <h2 className="font-display mb-7 text-center text-[26px] font-bold tracking-[-0.02em]">Compare plans</h2>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Feature</TableHead>
-                <TableHead className="text-center">Free</TableHead>
-                <TableHead className="text-center">Pro</TableHead>
-                <TableHead className="text-center">Org</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {COMPARE_ROWS.map((row) => (
-                <TableRow key={row.feature}>
-                  <TableCell>{row.feature}</TableCell>
-                  <TableCell className={cn("text-center font-mono", compareCellClass(row.free))}>{row.free}</TableCell>
-                  <TableCell className={cn("text-center font-mono", compareCellClass(row.pro))}>{row.pro}</TableCell>
-                  <TableCell className={cn("text-center font-mono", compareCellClass(row.org))}>{row.org}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <div className="w-full overflow-x-auto rounded-xl border border-border-default">
+            <table className="w-full min-w-[560px] border-collapse text-[13px]">
+              <thead>
+                <tr className="bg-bg-2 text-left">
+                  <th className="px-4 py-3.5 text-[12px] font-mono uppercase tracking-[0.05em] text-ink-3">Feature</th>
+                  <th className="px-4 py-3.5 text-center">
+                    <div className="text-[13px] font-bold text-ink-1">Free</div>
+                    <div className="mt-0.5 font-mono text-[11px] font-normal text-ink-3">$0</div>
+                  </th>
+                  <th className="relative bg-brand-violet/10 px-4 py-3.5 text-center">
+                    <div className="mx-auto mb-1.5 w-fit rounded-full bg-gradient-to-r from-brand-violet to-brand-cyan px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.06em] text-white">
+                      Recommended
+                    </div>
+                    <div className="text-[13px] font-bold text-ink-1">Pro</div>
+                    <div className="mt-0.5 font-mono text-[11px] font-normal text-ink-3">$9/mo</div>
+                  </th>
+                  <th className="px-4 py-3.5 text-center">
+                    <div className="text-[13px] font-bold text-ink-1">Org</div>
+                    <div className="mt-0.5 font-mono text-[11px] font-normal text-ink-3">$25/mo</div>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {COMPARE_GROUPS.map((group) => (
+                  <React.Fragment key={group.label}>
+                    <tr>
+                      <td
+                        colSpan={4}
+                        className="border-t border-border-subtle bg-bg-2/60 px-4 py-2 font-mono text-[11px] font-semibold uppercase tracking-[0.07em] text-ink-3"
+                      >
+                        {group.label}
+                      </td>
+                    </tr>
+                    {group.rows.map((row) => (
+                      <tr key={row.feature} className="border-t border-border-subtle transition-colors hover:bg-bg-2/40">
+                        <td className="px-4 py-3 text-ink-1">{row.feature}</td>
+                        <td className="px-4 py-3 text-center">
+                          <CompareCell value={row.free} />
+                        </td>
+                        <td className="bg-brand-violet/5 px-4 py-3 text-center">
+                          <CompareCell value={row.pro} />
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <CompareCell value={row.org} />
+                        </td>
+                      </tr>
+                    ))}
+                  </React.Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </section>
 
         <footer className="mt-[70px] text-center font-mono text-[13px] text-ink-3">
