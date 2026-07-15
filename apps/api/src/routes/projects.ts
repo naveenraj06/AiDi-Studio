@@ -17,8 +17,10 @@ const updateSchema = z.object({
   name: z.string().trim().min(1).optional(),
   icon: z.string().trim().min(1).optional(),
   color: z.string().trim().min(1).optional(),
-  plan: z.enum(["free", "pro", "team", "enterprise"]).optional(),
+  plan: z.enum(["free", "pro", "org"]).optional(),
 });
+
+const FREE_PROJECT_LIMIT = 2;
 
 export default async function projectRoutes(app: FastifyInstance) {
   app.addHook("preHandler", app.authenticate);
@@ -43,6 +45,17 @@ export default async function projectRoutes(app: FastifyInstance) {
   app.post("/projects", async (request, reply) => {
     const data = parseBody(createSchema, request, reply);
     if (!data) return;
+
+    const { count: freeProjectCount } = await supabase
+      .from("projects")
+      .select("id", { count: "exact", head: true })
+      .eq("owner_id", request.userId)
+      .eq("plan", "free");
+    if ((freeProjectCount ?? 0) >= FREE_PROJECT_LIMIT) {
+      return reply
+        .code(403)
+        .send({ error: `Free accounts are limited to ${FREE_PROJECT_LIMIT} projects — upgrade one or remove an existing project` });
+    }
 
     const { data: created, error: rpcError } = await supabase
       .rpc("create_project", {
@@ -83,6 +96,12 @@ export default async function projectRoutes(app: FastifyInstance) {
     const data = parseBody(updateSchema, request, reply);
     if (!data) return;
 
+    // See billing.ts's PATCH handler — "org" can only be granted through
+    // POST /projects/:projectId/org, which verifies a business email.
+    if (data.plan === "org") {
+      return reply.code(400).send({ error: "Create an Org from the Org panel instead of switching plans directly" });
+    }
+
     const { data: project, error } = await supabase
       .from("projects")
       .update({ ...data, updated_at: new Date().toISOString() })
@@ -90,6 +109,16 @@ export default async function projectRoutes(app: FastifyInstance) {
       .select(PROJECT_SELECT)
       .single<ProjectRow>();
     if (error || !project) return reply.code(500).send({ error: "Failed to update project" });
+
+    // projects.plan and billing.plan are kept in sync — both the project settings
+    // form and the billing page can change the plan, and gating logic elsewhere
+    // only reads one of the two depending on which route loaded the data.
+    // "org" is rejected above, so switching plans here always leaves Org.
+    if (data.plan !== undefined) {
+      await supabase.from("billing").update({ plan: data.plan }).eq("project_id", id);
+      await supabase.from("projects").update({ org_id: null }).eq("id", id);
+    }
+
     return reply.send({ project: serializeProject(project) });
   });
 

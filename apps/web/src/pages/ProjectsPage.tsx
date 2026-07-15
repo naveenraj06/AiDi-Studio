@@ -155,7 +155,7 @@ export default function ProjectsPage() {
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g. Marketing Analytics"
           />
-          <div className="mt-2 text-[11px] text-ink-3">Free plan · 1 project, 3 dashboards, 10 widgets</div>
+          <div className="mt-2 text-[11px] text-ink-3">Free plan · up to 2 projects, 3 published dashboards</div>
           <div className="mt-[22px] flex justify-end gap-2.5">
             <Button variant="ghost" size="sm" onClick={() => setOpen(false)}>
               Cancel

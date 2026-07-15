@@ -4,11 +4,15 @@ import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
 import Fastify, { type FastifyInstance } from "fastify";
 import { env } from "./lib/env.js";
+import apiKeyAuthPlugin from "./plugins/apiKeyAuth.js";
 import supabaseAuthPlugin from "./plugins/supabaseAuth.js";
+import apiKeyRoutes from "./routes/apiKeys.js";
 import billingRoutes from "./routes/billing.js";
 import dashboardRoutes, { publicDashboardRoutes } from "./routes/dashboards.js";
+import orgRoutes from "./routes/orgs.js";
 import projectRoutes from "./routes/projects.js";
 import resourceRoutes from "./routes/resources.js";
+import sdkRoutes from "./routes/sdk.js";
 import teamRoutes from "./routes/team.js";
 import widgetRoutes from "./routes/widgets.js";
 
@@ -24,6 +28,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(rateLimit, { max: 100, timeWindow: "1 minute" });
   await app.register(cors, { origin: env.CORS_ORIGIN, credentials: true });
   await app.register(supabaseAuthPlugin);
+  await app.register(apiKeyAuthPlugin);
 
   app.get("/health", async () => ({ ok: true }));
 
@@ -38,6 +43,9 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(publicDashboardRoutes);
   await app.register(teamRoutes);
   await app.register(billingRoutes);
+  await app.register(orgRoutes);
+  await app.register(apiKeyRoutes);
+  await app.register(sdkRoutes);
 
   app.setErrorHandler((error: Error & { statusCode?: number }, _request, reply) => {
     app.log.error(error);

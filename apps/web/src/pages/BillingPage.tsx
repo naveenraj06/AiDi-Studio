@@ -1,19 +1,22 @@
 import * as React from "react";
+import { Link } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useGetProjectsQuery } from "@/store/api/projectsApi";
 import { useGetBillingQuery, useUpdateBillingMutation } from "@/store/api/billingApi";
+import { useGetMyOrgQuery, useCreateOrgMutation } from "@/store/api/orgApi";
 import { getErrorMessage } from "@/lib/errors";
 import type { Plan } from "@/types";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const PLAN_DEFS: { key: Plan; name: string; price: string; limits: string }[] = [
-  { key: "free", name: "Free", price: "$0", limits: "1 project · 3 dashboards · 10 widgets · AiDi branding" },
-  { key: "pro", name: "Pro", price: "$29/seat", limits: "5 projects · unlimited dashboards/widgets · no branding" },
-  { key: "team", name: "Team", price: "$49/seat", limits: "Unlimited projects · roles & permissions · priority support" },
-  { key: "enterprise", name: "Enterprise", price: "Custom", limits: "SSO/SAML · audit logs · dedicated support" },
+  { key: "free", name: "Free", price: "$0", limits: "2 projects · 3 published dashboards · no collaboration" },
+  { key: "pro", name: "Pro", price: "$9/mo", limits: "Unlimited projects & dashboards · bulk import · SDK embed" },
+  { key: "org", name: "Org", price: "$25/mo", limits: "Everything in Pro · unlimited members · shared projects" },
 ];
-const RANK: Record<Plan, number> = { free: 0, pro: 1, team: 2, enterprise: 3 };
+const RANK: Record<Plan, number> = { free: 0, pro: 1, org: 2 };
 
 export default function BillingPage() {
   const { toast } = useAuth();
@@ -23,6 +26,10 @@ export default function BillingPage() {
   const activeProjectId = projectId || projects?.[0]?.id || "";
   const { data: billing, isLoading, isError } = useGetBillingQuery(activeProjectId, { skip: !activeProjectId });
   const [updateBilling, { isLoading: updatingBilling }] = useUpdateBillingMutation();
+  const { data: myOrg } = useGetMyOrgQuery();
+  const [createOrg, { isLoading: creatingOrg }] = useCreateOrgMutation();
+  const [orgName, setOrgName] = React.useState("");
+  const orgPanelRef = React.useRef<HTMLDivElement>(null);
 
   const onSelectPlan = async (planKey: Plan) => {
     try {
@@ -30,6 +37,17 @@ export default function BillingPage() {
       toast(`Switched to ${planKey[0].toUpperCase() + planKey.slice(1)} plan`, "success");
     } catch (err) {
       toast(getErrorMessage(err, "Couldn't change plans"), "error");
+    }
+  };
+
+  const onCreateOrg = async () => {
+    if (!orgName.trim()) return toast("Enter an Org name", "error");
+    try {
+      const org = await createOrg({ projectId: activeProjectId, name: orgName.trim() }).unwrap();
+      toast(`Org "${org.name}" created for ${org.domain}`, "success");
+      setOrgName("");
+    } catch (err) {
+      toast(getErrorMessage(err, "Couldn't create the Org"), "error");
     }
   };
 
@@ -68,8 +86,8 @@ export default function BillingPage() {
       </div>
 
       {isLoading && (
-        <div className="mb-7 grid grid-cols-4 gap-3">
-          {[0, 1, 2, 3].map((i) => (
+        <div className="mb-7 grid grid-cols-3 gap-3">
+          {[0, 1, 2].map((i) => (
             <div key={i} className="h-[140px] animate-pulse rounded-xl border border-border-default bg-bg-2" />
           ))}
         </div>
@@ -83,7 +101,7 @@ export default function BillingPage() {
 
       {!isLoading && !isError && billing && (
         <>
-          <div className="mb-7 grid grid-cols-4 gap-3">
+          <div className="mb-7 grid grid-cols-3 gap-3">
             {PLAN_DEFS.map((pl) => {
               const isCurrent = pl.key === billing.plan;
               return (
@@ -105,17 +123,60 @@ export default function BillingPage() {
                   <div className="mb-3.5 text-[11px] leading-[1.6] text-ink-2">{pl.limits}</div>
                   {!isCurrent && (
                     <div
-                      onClick={updatingBilling ? undefined : () => onSelectPlan(pl.key)}
+                      onClick={
+                        updatingBilling
+                          ? undefined
+                          : pl.key === "org"
+                            ? () => orgPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })
+                            : () => onSelectPlan(pl.key)
+                      }
                       className="cursor-pointer rounded-sm border border-border-strong bg-bg-2 p-2 text-center text-[12px] font-semibold text-ink-1 hover:bg-bg-3"
                       style={updatingBilling ? { opacity: 0.6, pointerEvents: "none" } : undefined}
                     >
-                      {RANK[pl.key] > RANK[billing.plan] ? "Upgrade" : "Downgrade"}
+                      {pl.key === "org" ? "Create below ↓" : RANK[pl.key] > RANK[billing.plan] ? "Upgrade" : "Downgrade"}
                     </div>
                   )}
                 </div>
               );
             })}
           </div>
+
+          <Card className="mb-[18px]" ref={orgPanelRef}>
+            <div className="mb-4 text-[14px] font-semibold text-ink-1">Org</div>
+            {billing.plan === "org" ? (
+              myOrg ? (
+                <div className="flex items-center justify-between">
+                  <div className="text-[13px] text-ink-1">
+                    <span className="font-semibold">{myOrg.name}</span>{" "}
+                    <span className="text-ink-3">· @{myOrg.domain} · unlimited members</span>
+                  </div>
+                  <Link to="/team" className="text-[12px] text-brand-violet-light">
+                    Manage teammates →
+                  </Link>
+                </div>
+              ) : (
+                <div className="text-[13px] text-ink-3">Loading your Org…</div>
+              )
+            ) : (
+              <div>
+                <div className="mb-3 text-[13px] text-ink-2">
+                  Create an Org to collaborate — requires a business email (no gmail.com/yahoo.com/etc.). Teammates
+                  must share your email domain.
+                </div>
+                <div className="flex gap-2.5">
+                  <Input
+                    value={orgName}
+                    onChange={(e) => setOrgName(e.target.value)}
+                    placeholder="Org name, e.g. Acme Inc"
+                    className="mt-0 flex-1"
+                  />
+                  <Button onClick={onCreateOrg} disabled={creatingOrg} className="whitespace-nowrap">
+                    {creatingOrg ? "Creating…" : "Create your Org"}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </Card>
 
           <Card className="mb-[18px]">
             <div className="mb-4 text-[14px] font-semibold text-ink-1">Payment method</div>

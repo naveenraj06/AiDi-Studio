@@ -9,6 +9,7 @@ export interface ProjectRow {
   color: string;
   plan: string;
   owner_id: string;
+  org_id: string | null;
   created_at: string;
   dashboards?: CountRow[];
   widgets?: CountRow[];
@@ -23,10 +24,29 @@ export function serializeProject(p: ProjectRow) {
     color: p.color,
     plan: p.plan,
     owner_id: p.owner_id,
+    org_id: p.org_id,
     created_at: p.created_at,
     dashboards: p.dashboards?.[0]?.count ?? 0,
     widgets: p.widgets?.[0]?.count ?? 0,
     resources: p.resources?.[0]?.count ?? 0,
+  };
+}
+
+export interface OrgRow {
+  id: string;
+  name: string;
+  domain: string;
+  owner_id: string;
+  created_at: string;
+}
+
+export function serializeOrg(o: OrgRow) {
+  return {
+    id: o.id,
+    name: o.name,
+    domain: o.domain,
+    owner_id: o.owner_id,
+    created_at: o.created_at,
   };
 }
 

@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireRole } from "../lib/authz.js";
+import { parsePostmanCollection, PostmanParseError } from "../lib/postmanImport.js";
 import { serializeResource, type ResourceRow } from "../lib/serialize.js";
 import { assertPublicHttpUrl } from "../lib/ssrfGuard.js";
 import { fetchResourceJson, ResourceFetchError } from "../lib/resourceFetch.js";
@@ -9,10 +10,12 @@ import { supabase } from "../lib/supabase.js";
 import { parseBody } from "../lib/validate.js";
 
 const RESOURCE_SELECT = "*, widgets:widgets(count)";
+const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"] as const;
 
 const createSchema = z.object({
   name: z.string().trim().min(1, "Enter a resource name"),
   url: z.string().trim().url("Enter a valid URL"),
+  method: z.enum(HTTP_METHODS).default("GET"),
   authType: z.enum(["bearer", "api_key", "oauth", "none"]).default("none"),
   authCredential: z.string().trim().optional(),
   importedFrom: z.enum(["postman", "openapi", "curl", "manual"]).default("manual"),
@@ -25,14 +28,28 @@ const updateSchema = z.object({
   authCredential: z.string().trim().optional(),
 });
 
+const bulkCreateSchema = z.object({
+  resources: z.array(createSchema.omit({ importedFrom: true })).min(1).max(200),
+});
+
+const postmanParseSchema = z.object({
+  collection: z.unknown(),
+});
+
 function toRow(input: Partial<z.infer<typeof createSchema>>) {
   const row: Record<string, unknown> = {};
   if (input.name !== undefined) row.name = input.name;
   if (input.url !== undefined) row.url = input.url;
+  if (input.method !== undefined) row.method = input.method;
   if (input.authType !== undefined) row.auth_type = input.authType;
   if (input.authCredential !== undefined) row.auth_credential = input.authCredential;
   if (input.importedFrom !== undefined) row.imported_from = input.importedFrom;
   return row;
+}
+
+async function requireNonFreePlan(projectId: string): Promise<boolean> {
+  const { data: project } = await supabase.from("projects").select("plan").eq("id", projectId).maybeSingle();
+  return project?.plan !== "free";
 }
 
 export default async function resourceRoutes(app: FastifyInstance) {
@@ -213,6 +230,58 @@ export default async function resourceRoutes(app: FastifyInstance) {
 
       const suggestion = await suggestWidgetForResource(resource.name, sample);
       return reply.send({ suggestion });
+    },
+  );
+
+  // Preview step for bulk import: parses a pasted/uploaded Postman Collection
+  // v2.1 export into a flat, selectable endpoint list. Writes nothing.
+  app.post(
+    "/projects/:projectId/resources/import/postman/parse",
+    { preHandler: [requireRole("editor", "projectId")] },
+    async (request, reply) => {
+      const { projectId } = request.params as { projectId: string };
+      if (!(await requireNonFreePlan(projectId))) {
+        return reply.code(403).send({ error: "Upgrade to Pro or Org to bulk-import APIs" });
+      }
+
+      const data = parseBody(postmanParseSchema, request, reply);
+      if (!data) return;
+
+      try {
+        const items = parsePostmanCollection(data.collection);
+        return reply.send({ items });
+      } catch (err) {
+        if (err instanceof PostmanParseError) return reply.code(400).send({ error: err.message });
+        return reply.code(400).send({ error: "Couldn't parse that collection" });
+      }
+    },
+  );
+
+  // Bulk-creates resources from the checklist the parse step above produced
+  // (or any other array of resource inputs) in one insert.
+  app.post(
+    "/projects/:projectId/resources/bulk",
+    { preHandler: [requireRole("editor", "projectId")] },
+    async (request, reply) => {
+      const { projectId } = request.params as { projectId: string };
+      if (!(await requireNonFreePlan(projectId))) {
+        return reply.code(403).send({ error: "Upgrade to Pro or Org to bulk-import APIs" });
+      }
+
+      const data = parseBody(bulkCreateSchema, request, reply);
+      if (!data) return;
+
+      const rows = data.resources.map((r) => ({
+        ...toRow({ ...r, importedFrom: "postman" }),
+        project_id: projectId,
+      }));
+      const { data: created, error } = await supabase
+        .from("api_resources")
+        .insert(rows)
+        .select(RESOURCE_SELECT)
+        .returns<ResourceRow[]>();
+      if (error || !created) return reply.code(500).send({ error: "Failed to import resources" });
+      return reply.code(201).send({ resources: created.map(serializeResource) });
     },
   );
 }

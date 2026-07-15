@@ -44,6 +44,23 @@ export default async function teamRoutes(app: FastifyInstance) {
       const data = parseBody(inviteSchema, request, reply);
       if (!data) return;
 
+      const { data: project } = await supabase
+        .from("projects")
+        .select("plan, org_id")
+        .eq("id", projectId)
+        .maybeSingle();
+      if (project?.plan !== "org") {
+        return reply.code(403).send({ error: "Upgrade this project to Org to add teammates" });
+      }
+
+      if (project.org_id) {
+        const { data: org } = await supabase.from("orgs").select("domain").eq("id", project.org_id).maybeSingle();
+        const invitedDomain = data.email.split("@")[1]?.toLowerCase();
+        if (org && invitedDomain !== org.domain) {
+          return reply.code(400).send({ error: `Teammates must use an @${org.domain} email address` });
+        }
+      }
+
       const { data: member, error } = await supabase
         .from("project_members")
         .insert({ project_id: projectId, name: data.name, email: data.email, role: data.role })

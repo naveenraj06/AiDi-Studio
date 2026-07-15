@@ -1,14 +1,31 @@
 import { createApi } from "@reduxjs/toolkit/query/react";
 import { axiosBaseQuery } from "@/store/axiosBaseQuery";
 import { axiosClient } from "@/lib/axiosClient";
-import type { ApiResource, AuthType, WidgetSuggestion } from "@/types";
+import type { ApiResource, AuthType, HttpMethod, WidgetSuggestion } from "@/types";
 
 export interface CreateResourceInput {
   name: string;
   url: string;
+  method?: HttpMethod;
   authType?: AuthType;
   authCredential?: string;
   importedFrom?: "postman" | "openapi" | "curl" | "manual";
+}
+
+export interface ParsedPostmanEndpoint {
+  name: string;
+  method: HttpMethod;
+  url: string;
+  authType: AuthType;
+  authCredential?: string;
+}
+
+export interface BulkResourceInput {
+  name: string;
+  url: string;
+  method?: HttpMethod;
+  authType?: AuthType;
+  authCredential?: string;
 }
 
 export interface UpdateResourceInput {
@@ -37,6 +54,24 @@ export const resourcesApi = createApi({
     createResource: builder.mutation<ApiResource, { projectId: string; input: CreateResourceInput }>({
       query: ({ projectId, input }) => ({ url: `/projects/${projectId}/resources`, method: "POST", data: input }),
       transformResponse: (response: { resource: ApiResource }) => response.resource,
+      invalidatesTags: (_result, _error, { projectId }) => [{ type: "Resource", id: `LIST-${projectId}` }],
+    }),
+    // Preview step for Postman bulk import — parses the collection, writes nothing.
+    parsePostmanCollection: builder.mutation<ParsedPostmanEndpoint[], { projectId: string; collection: unknown }>({
+      query: ({ projectId, collection }) => ({
+        url: `/projects/${projectId}/resources/import/postman/parse`,
+        method: "POST",
+        data: { collection },
+      }),
+      transformResponse: (response: { items: ParsedPostmanEndpoint[] }) => response.items,
+    }),
+    createResourcesBulk: builder.mutation<ApiResource[], { projectId: string; resources: BulkResourceInput[] }>({
+      query: ({ projectId, resources }) => ({
+        url: `/projects/${projectId}/resources/bulk`,
+        method: "POST",
+        data: { resources },
+      }),
+      transformResponse: (response: { resources: ApiResource[] }) => response.resources,
       invalidatesTags: (_result, _error, { projectId }) => [{ type: "Resource", id: `LIST-${projectId}` }],
     }),
     updateResource: builder.mutation<ApiResource, { projectId: string; id: string; input: UpdateResourceInput }>({
@@ -85,6 +120,8 @@ export const resourcesApi = createApi({
 export const {
   useGetResourcesQuery,
   useCreateResourceMutation,
+  useParsePostmanCollectionMutation,
+  useCreateResourcesBulkMutation,
   useUpdateResourceMutation,
   useDeleteResourceMutation,
   useTestResourceConnectionMutation,

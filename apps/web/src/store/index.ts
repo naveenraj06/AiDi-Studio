@@ -10,6 +10,8 @@ import { resourcesApi } from "@/store/api/resourcesApi";
 import { teamApi } from "@/store/api/teamApi";
 import { billingApi } from "@/store/api/billingApi";
 import { publicDashboardApi } from "@/store/api/publicDashboardApi";
+import { orgApi } from "@/store/api/orgApi";
+import { apiKeysApi } from "@/store/api/apiKeysApi";
 
 export const store = configureStore({
   reducer: {
@@ -22,6 +24,8 @@ export const store = configureStore({
     [teamApi.reducerPath]: teamApi.reducer,
     [billingApi.reducerPath]: billingApi.reducer,
     [publicDashboardApi.reducerPath]: publicDashboardApi.reducer,
+    [orgApi.reducerPath]: orgApi.reducer,
+    [apiKeysApi.reducerPath]: apiKeysApi.reducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware().concat(
@@ -32,6 +36,8 @@ export const store = configureStore({
       teamApi.middleware,
       billingApi.middleware,
       publicDashboardApi.middleware,
+      orgApi.middleware,
+      apiKeysApi.middleware,
       apiErrorToastMiddleware,
     ),
 });

@@ -47,7 +47,7 @@ const PAID_PLANS: Record<
     note: "flat rate · cancel anytime",
     features: [
       { text: <><strong>Everything in Free</strong>, plus:</> },
-      { text: <><strong>Bulk import</strong> your API library — Postman, OpenAPI, cURL</> },
+      { text: <><strong>Bulk import</strong> a Postman collection, or add single endpoints from OpenAPI/cURL</> },
       { text: <><strong>Unlimited projects</strong> & published dashboards</> },
       { text: <><strong>Native JS / SDK embed</strong> — no iframes, feels built-in</> },
       { text: "Collaboration — that's what Org is for →", dim: true },
@@ -67,7 +67,7 @@ const PAID_PLANS: Record<
       { text: <><strong>Unlimited members</strong> — flat price, never per-seat</> },
       { text: <><strong>Shared projects</strong> — everyone edits the same dashboards</> },
       { text: <><strong>Roles</strong> — owner, editor, viewer per member</> },
-      { text: <>Create with your <strong>company email</strong> · invite anyone, any domain</> },
+      { text: <>Create with your <strong>company email</strong> · invite teammates on the same domain</> },
     ],
     cta: "Create your Org",
   },
@@ -87,7 +87,7 @@ const RULES = [
   {
     k: "rule 03",
     title: "One Org per domain included",
-    body: "Creating an Org requires a company email. Need a separate Org? Each one is its own $25/mo subscription.",
+    body: "Creating an Org requires a company email, and teammates must share that email domain. Need a separate Org? Each one is its own $25/mo subscription.",
   },
 ];
 
@@ -112,7 +112,7 @@ const COMPARE_GROUPS: { label: string; rows: CompareRow[] }[] = [
     label: "Sharing & embedding",
     rows: [
       { feature: "Public links & iframe embed", free: "yes", pro: "yes", org: "yes" },
-      { feature: "Bulk import (Postman / OpenAPI / cURL)", free: "no", pro: "yes", org: "yes" },
+      { feature: "Bulk import (Postman collections)", free: "no", pro: "yes", org: "yes" },
       { feature: "JS / SDK embed", free: "no", pro: "yes", org: "yes" },
     ],
   },

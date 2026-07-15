@@ -8,7 +8,7 @@ import { parseBody } from "../lib/validate.js";
 const BILLING_SELECT = "*, invoices(*)";
 
 const updateSchema = z.object({
-  plan: z.enum(["free", "pro", "team", "enterprise"]).optional(),
+  plan: z.enum(["free", "pro", "org"]).optional(),
   seats: z.number().int().min(1).optional(),
 });
 
@@ -56,6 +56,13 @@ export default async function billingRoutes(app: FastifyInstance) {
       const data = parseBody(updateSchema, request, reply);
       if (!data) return;
 
+      // "Org" can only be reached through POST /projects/:projectId/org, which
+      // verifies a business email and links the project to an Org record —
+      // this generic plan switch must not be able to grant it directly.
+      if (data.plan === "org") {
+        return reply.code(400).send({ error: "Create an Org from the Org panel instead of switching plans directly" });
+      }
+
       try {
         await getOrCreateBilling(projectId);
       } catch {
@@ -73,6 +80,13 @@ export default async function billingRoutes(app: FastifyInstance) {
         .select(BILLING_SELECT)
         .single<BillingRow>();
       if (error || !billing) return reply.code(500).send({ error: "Failed to update billing" });
+
+      // See projects.ts's PATCH handler — projects.plan and billing.plan are kept in
+      // sync. "org" is rejected above, so switching plans here always leaves Org.
+      if (data.plan !== undefined) {
+        await supabase.from("projects").update({ plan: data.plan, org_id: null }).eq("id", projectId);
+      }
+
       return reply.send({ billing: serializeBilling(billing) });
     },
   );

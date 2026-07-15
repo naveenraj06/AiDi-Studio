@@ -21,7 +21,7 @@ export type WidgetCategory = "education" | "finance" | "sales" | "operations" | 
 
 export type AuthType = "bearer" | "api_key" | "oauth" | "none";
 
-export type Plan = "free" | "pro" | "team" | "enterprise";
+export type Plan = "free" | "pro" | "org";
 
 export type ProjectRole = "owner" | "editor" | "viewer";
 
@@ -43,17 +43,20 @@ export interface Project {
   color: string;
   plan: Plan;
   owner_id: string;
+  org_id: string | null;
   created_at: string;
   dashboards: number;
   widgets: number;
   resources: number;
 }
 
+export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+
 export interface ApiResource {
   id: string;
   name: string;
   url: string;
-  method: "GET";
+  method: HttpMethod;
   auth_type: AuthType;
   status: "healthy" | "error";
   last_tested_at: string | null;

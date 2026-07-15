@@ -4,14 +4,16 @@ import { useAuth } from "@/hooks/useAuth";
 import { useGetProjectQuery } from "@/store/api/projectsApi";
 import {
   useCreateResourceMutation,
+  useCreateResourcesBulkMutation,
   useDeleteResourceMutation,
   useGetResourcesQuery,
+  useParsePostmanCollectionMutation,
   useTestResourceConnectionMutation,
 } from "@/store/api/resourcesApi";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ImportResourceDialog, type ResourceFormResult } from "@/components/resources/ImportResourceDialog";
-import type { ApiResource } from "@/types";
+import type { ApiResource, HttpMethod } from "@/types";
 
 export default function ResourcesPage() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -20,6 +22,8 @@ export default function ResourcesPage() {
   const { data: project, isLoading: projectLoading } = useGetProjectQuery(projectId ?? "", { skip: !projectId });
   const { data: resources, isLoading, isError } = useGetResourcesQuery(projectId ?? "", { skip: !projectId });
   const [createResource, { isLoading: creating }] = useCreateResourceMutation();
+  const [parsePostmanCollection] = useParsePostmanCollectionMutation();
+  const [createResourcesBulk] = useCreateResourcesBulkMutation();
   const [testConnection] = useTestResourceConnectionMutation();
   const [deleteResource, { isLoading: deleting }] = useDeleteResourceMutation();
 
@@ -37,6 +41,17 @@ export default function ResourcesPage() {
     } catch {
       toast("Couldn't add the resource — try again", "error");
     }
+  };
+
+  const handleParsePostman = async (collection: unknown) => {
+    return parsePostmanCollection({ projectId: projectId ?? "", collection }).unwrap();
+  };
+
+  const handleBulkImport = async (
+    items: { name: string; url: string; method: HttpMethod; authType: ResourceFormResult["authType"]; authCredential?: string }[],
+  ) => {
+    await createResourcesBulk({ projectId: projectId ?? "", resources: items }).unwrap();
+    toast(`Imported ${items.length} resource${items.length === 1 ? "" : "s"}`, "success");
   };
 
   const handleTest = async (id: string) => {
@@ -91,7 +106,7 @@ export default function ResourcesPage() {
         <div>
           <div className="font-display text-[24px] font-bold text-ink-1">API Resources</div>
           <div className="mt-1 text-[13px] text-ink-3">
-            {project.name} · {resources?.length ?? 0} connected · GET only in v1
+            {project.name} · {resources?.length ?? 0} connected · manual add is GET only, Postman import keeps its own method
           </div>
         </div>
         <Button onClick={() => setShowImport(true)}>+ Add resource</Button>
@@ -186,6 +201,9 @@ export default function ResourcesPage() {
         onOpenChange={setShowImport}
         onSubmit={handleAdd}
         submitting={creating}
+        bulkImportAllowed={project.plan !== "free"}
+        onParsePostman={handleParsePostman}
+        onBulkImport={handleBulkImport}
       />
 
       <ConfirmDialog

@@ -33,6 +33,8 @@ const tilesSchema = z.object({
   ),
 });
 
+const FREE_PUBLISHED_DASHBOARD_LIMIT = 3;
+
 async function uniqueSlug(base: string) {
   let slug = slugify(base);
   for (let attempt = 0; attempt < 5; attempt++) {
@@ -108,6 +110,35 @@ export default async function dashboardRoutes(app: FastifyInstance) {
 
       const data = parseBody(updateSchema, request, reply);
       if (!data) return;
+
+      if (data.status === "published") {
+        const { data: project } = await supabase
+          .from("projects")
+          .select("owner_id, plan")
+          .eq("id", projectId)
+          .maybeSingle();
+        if (project?.plan === "free") {
+          const { data: freeProjects } = await supabase
+            .from("projects")
+            .select("id")
+            .eq("owner_id", project.owner_id)
+            .eq("plan", "free");
+          const freeProjectIds = (freeProjects ?? []).map((p) => p.id as string);
+          const { count } = freeProjectIds.length
+            ? await supabase
+                .from("dashboards")
+                .select("id", { count: "exact", head: true })
+                .in("project_id", freeProjectIds)
+                .eq("status", "published")
+                .neq("id", id)
+            : { count: 0 };
+          if ((count ?? 0) >= FREE_PUBLISHED_DASHBOARD_LIMIT) {
+            return reply.code(403).send({
+              error: `Free accounts are limited to ${FREE_PUBLISHED_DASHBOARD_LIMIT} published dashboards — upgrade to publish more`,
+            });
+          }
+        }
+      }
 
       const { sharePassword, ...rest } = data;
       const patch: Record<string, unknown> = { ...rest, updated_at: new Date().toISOString() };

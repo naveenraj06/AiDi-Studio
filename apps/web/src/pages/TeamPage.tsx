@@ -24,6 +24,8 @@ export default function TeamPage() {
   const [inviteRole, setInviteRole] = React.useState<ProjectRole>("editor");
 
   const activeProjectId = projectId || projects?.[0]?.id || "";
+  const activeProject = (projects ?? []).find((p) => p.id === activeProjectId);
+  const isOrgProject = activeProject?.plan === "org";
 
   const {
     data: members,
@@ -174,26 +176,32 @@ export default function TeamPage() {
         </div>
       )}
 
-      <div className="flex items-center gap-2.5 rounded-xl border border-border-default bg-bg-1 p-[18px]">
-        <Input
-          value={inviteEmail}
-          onChange={(e) => setInviteEmail(e.target.value)}
-          placeholder="name@company.com"
-          className="mt-0 flex-1"
-        />
-        <Select value={inviteRole} onValueChange={(v) => setInviteRole(v as ProjectRole)}>
-          <SelectTrigger className="mt-0 w-[120px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="editor">Editor</SelectItem>
-            <SelectItem value="viewer">Viewer</SelectItem>
-          </SelectContent>
-        </Select>
-        <Button onClick={onInvite} disabled={inviting} className="whitespace-nowrap">
-          {inviting ? "Inviting…" : "Invite"}
-        </Button>
-      </div>
+      {isOrgProject ? (
+        <div className="flex items-center gap-2.5 rounded-xl border border-border-default bg-bg-1 p-[18px]">
+          <Input
+            value={inviteEmail}
+            onChange={(e) => setInviteEmail(e.target.value)}
+            placeholder="name@company.com"
+            className="mt-0 flex-1"
+          />
+          <Select value={inviteRole} onValueChange={(v) => setInviteRole(v as ProjectRole)}>
+            <SelectTrigger className="mt-0 w-[120px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="editor">Editor</SelectItem>
+              <SelectItem value="viewer">Viewer</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button onClick={onInvite} disabled={inviting} className="whitespace-nowrap">
+            {inviting ? "Inviting…" : "Invite"}
+          </Button>
+        </div>
+      ) : (
+        <div className="rounded-xl border border-dashed border-border-strong bg-bg-1 p-[18px] text-center text-[13px] text-ink-3">
+          Solo plans are solo — create an Org from the Billing page to invite teammates on your email domain.
+        </div>
+      )}
     </div>
   );
 }
