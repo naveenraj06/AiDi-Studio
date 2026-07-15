@@ -1,0 +1,1203 @@
+From 61ed2adb192aa3373f041508893b298f399bdf8a Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 15 Jul 2026 10:13:36 +0000
+Subject: [PATCH 1/2] Add Pricing, Privacy Policy, and Terms of Service pages
+
+Ports the three static mockup pages into the React app as routes
+(/pricing, /privacy, /terms), rebuilt with the product's real dark/light
+design system (Sora + IBM Plex Mono, brand-violet/cyan, existing Table and
+Button components) instead of the mockups' standalone teal palette.
+Content is preserved verbatim, including bracketed legal placeholders.
+Wires up the dead Terms/Privacy footer links on the landing page.
+
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01WK21zjTd6ZeibVA7s3spE6
+---
+ apps/web/src/App.tsx                          |   6 +
+ .../web/src/components/marketing/LegalDoc.tsx |  53 ++++
+ .../components/marketing/MarketingHeader.tsx  |  25 ++
+ apps/web/src/index.css                        |  67 ++++
+ apps/web/src/pages/LandingPage.tsx            |   8 +-
+ apps/web/src/pages/PricingPage.tsx            | 299 ++++++++++++++++++
+ apps/web/src/pages/PrivacyPolicyPage.tsx      | 222 +++++++++++++
+ apps/web/src/pages/TermsPage.tsx              | 174 ++++++++++
+ 8 files changed, 850 insertions(+), 4 deletions(-)
+ create mode 100644 apps/web/src/components/marketing/LegalDoc.tsx
+ create mode 100644 apps/web/src/components/marketing/MarketingHeader.tsx
+ create mode 100644 apps/web/src/pages/PricingPage.tsx
+ create mode 100644 apps/web/src/pages/PrivacyPolicyPage.tsx
+ create mode 100644 apps/web/src/pages/TermsPage.tsx
+
+diff --git a/apps/web/src/App.tsx b/apps/web/src/App.tsx
+index 81ef185..433e2b7 100644
+--- a/apps/web/src/App.tsx
++++ b/apps/web/src/App.tsx
+@@ -25,6 +25,9 @@ import BillingPage from "@/pages/BillingPage";
+ 
+ import PublicDashboardPage from "@/pages/PublicDashboardPage";
+ import ComponentsGalleryPage from "@/pages/ComponentsGalleryPage";
++import PricingPage from "@/pages/PricingPage";
++import PrivacyPolicyPage from "@/pages/PrivacyPolicyPage";
++import TermsPage from "@/pages/TermsPage";
+ 
+ function ThemeEffect() {
+   const theme = useAppSelector((s) => s.ui.theme);
+@@ -55,6 +58,9 @@ function App() {
+         <Route path="/d/:slug/embed" element={<PublicDashboardPage />} />
+ 
+         <Route path="/components" element={<ComponentsGalleryPage />} />
++        <Route path="/pricing" element={<PricingPage />} />
++        <Route path="/privacy" element={<PrivacyPolicyPage />} />
++        <Route path="/terms" element={<TermsPage />} />
+ 
+         <Route element={<RequireAuth />}>
+           <Route element={<AppShell />}>
+diff --git a/apps/web/src/components/marketing/LegalDoc.tsx b/apps/web/src/components/marketing/LegalDoc.tsx
+new file mode 100644
+index 0000000..57fa733
+--- /dev/null
++++ b/apps/web/src/components/marketing/LegalDoc.tsx
+@@ -0,0 +1,53 @@
++import type * as React from "react";
++import { Link } from "react-router-dom";
++import { MarketingHeader } from "@/components/marketing/MarketingHeader";
++
++/** Shared chrome for the Privacy Policy and Terms of Service pages — both documents share
++ * the same eyebrow/title/updated-date/notice layout, just with different body sections. */
++export function LegalDoc({
++  eyebrow,
++  title,
++  updated,
++  notice,
++  crossLink,
++  children,
++}: {
++  eyebrow: string;
++  title: string;
++  updated: string;
++  notice: React.ReactNode;
++  crossLink: { label: string; to: string };
++  children: React.ReactNode;
++}) {
++  return (
++    <div className="min-h-screen bg-bg-0 text-ink-1">
++      <MarketingHeader />
++
++      <div className="mx-auto max-w-[820px] px-6 pb-[110px] pt-[56px]">
++        <article className="rounded-2xl border border-border-default bg-bg-1 p-8 shadow-md sm:p-12">
++          <div className="font-mono text-[12px] font-semibold uppercase tracking-[0.08em] text-brand-violet-light">
++            {eyebrow}
++          </div>
++          <h1 className="font-display mt-2 text-[32px] font-bold leading-[1.15] tracking-[-0.02em] sm:text-[40px]">
++            {title}
++          </h1>
++          <div className="mt-2 font-mono text-[13px] text-ink-3">Last updated: {updated}</div>
++
++          <div className="mt-8 rounded-lg border border-dashed border-border-strong border-l-[3px] border-l-brand-violet bg-brand-violet/5 px-[18px] py-3.5 text-[13.5px] leading-[1.6] text-ink-2">
++            {notice}
++          </div>
++
++          <div className="legal-doc mt-6">{children}</div>
++        </article>
++
++        <div className="mt-8 text-center font-mono text-[13px] text-ink-3">
++          <Link to={crossLink.to} className="text-ink-3 hover:text-ink-2">
++            {crossLink.label}
++          </Link>
++          <span className="mx-2">·</span>
++          AiDi Studio
++        </div>
++      </div>
++    </div>
++  );
++}
+diff --git a/apps/web/src/components/marketing/MarketingHeader.tsx b/apps/web/src/components/marketing/MarketingHeader.tsx
+new file mode 100644
+index 0000000..6103d23
+--- /dev/null
++++ b/apps/web/src/components/marketing/MarketingHeader.tsx
+@@ -0,0 +1,25 @@
++import { useNavigate } from "react-router-dom";
++import { Button } from "@/components/ui/button";
++
++/** Shared sticky header for standalone marketing/legal pages (pricing, privacy, terms) —
++ * mirrors the logo + auth actions used on the landing and components-gallery pages. */
++export function MarketingHeader() {
++  const navigate = useNavigate();
++
++  return (
++    <div className="sticky top-0 z-20 flex items-center justify-between border-b border-border-subtle bg-bg-0/90 px-6 py-[18px] backdrop-blur sm:px-12">
++      <div onClick={() => navigate("/landing")} className="flex cursor-pointer items-center gap-2.5">
++        <div className="h-7 w-7 rounded-lg" style={{ background: "linear-gradient(135deg, #8b5cf6, #22d3ee)" }} />
++        <div className="font-display text-[16px] font-bold">AiDi Studio</div>
++      </div>
++      <div className="flex items-center gap-4">
++        <button onClick={() => navigate("/login")} className="cursor-pointer text-[13px] text-ink-2 hover:text-ink-1">
++          Log in
++        </button>
++        <Button size="sm" onClick={() => navigate("/signup")}>
++          Start free
++        </Button>
++      </div>
++    </div>
++  );
++}
+diff --git a/apps/web/src/index.css b/apps/web/src/index.css
+index 7a4c921..70eaa43 100644
+--- a/apps/web/src/index.css
++++ b/apps/web/src/index.css
+@@ -163,6 +163,73 @@
+   }
+ }
+ 
++/* Prose styling for long-form legal documents (Privacy Policy, Terms of Service) —
++   content is authored as plain h2/p/ul/table markup, scoped here rather than
++   repeating utility classes on every element across two long documents. */
++.legal-doc h2 {
++  font-family: var(--font-display);
++  font-weight: 700;
++  font-size: 19px;
++  letter-spacing: -0.01em;
++  margin: 32px 0 10px;
++  color: var(--color-ink-1);
++}
++.legal-doc h2:first-child {
++  margin-top: 0;
++}
++.legal-doc p,
++.legal-doc li,
++.legal-doc td,
++.legal-doc th {
++  font-size: 15px;
++  color: var(--color-ink-2);
++  line-height: 1.65;
++}
++.legal-doc p {
++  margin-bottom: 12px;
++}
++.legal-doc ul {
++  margin: 0 0 12px 22px;
++}
++.legal-doc li {
++  margin-bottom: 7px;
++}
++.legal-doc strong {
++  font-weight: 600;
++  color: var(--color-ink-1);
++}
++.legal-doc a {
++  color: var(--color-brand-violet-light);
++}
++.legal-doc table {
++  width: 100%;
++  border-collapse: separate;
++  border-spacing: 0;
++  border: 1px solid var(--color-border-default);
++  border-radius: var(--radius-md);
++  overflow: hidden;
++  margin: 6px 0 16px;
++  font-size: 14px;
++}
++.legal-doc th,
++.legal-doc td {
++  padding: 10px 14px;
++  text-align: left;
++  border-bottom: 1px solid var(--color-border-subtle);
++  vertical-align: top;
++}
++.legal-doc th {
++  font-family: var(--font-mono);
++  font-size: 11.5px;
++  letter-spacing: 0.06em;
++  text-transform: uppercase;
++  background: var(--color-bg-2);
++  color: var(--color-ink-3);
++}
++.legal-doc tr:last-child td {
++  border-bottom: 0;
++}
++
+ @keyframes aidi-spin {
+   to {
+     transform: rotate(360deg);
+diff --git a/apps/web/src/pages/LandingPage.tsx b/apps/web/src/pages/LandingPage.tsx
+index 907282c..b7ae7c9 100644
+--- a/apps/web/src/pages/LandingPage.tsx
++++ b/apps/web/src/pages/LandingPage.tsx
+@@ -1014,12 +1014,12 @@ export default function LandingPage() {
+           <button onClick={() => scrollTo("pricing")} className="cursor-pointer text-ink-3 hover:text-ink-2">
+             Pricing
+           </button>
+-          <a href="#" className="text-ink-3 hover:text-ink-2">
++          <button onClick={() => navigate("/terms")} className="cursor-pointer text-ink-3 hover:text-ink-2">
+             Terms
+-          </a>
+-          <a href="#" className="text-ink-3 hover:text-ink-2">
++          </button>
++          <button onClick={() => navigate("/privacy")} className="cursor-pointer text-ink-3 hover:text-ink-2">
+             Privacy
+-          </a>
++          </button>
+         </div>
+       </div>
+     </div>
+diff --git a/apps/web/src/pages/PricingPage.tsx b/apps/web/src/pages/PricingPage.tsx
+new file mode 100644
+index 0000000..5323859
+--- /dev/null
++++ b/apps/web/src/pages/PricingPage.tsx
+@@ -0,0 +1,299 @@
++import * as React from "react";
++import { AnimatePresence, motion } from "framer-motion";
++import { useNavigate } from "react-router-dom";
++import { Check, X } from "lucide-react";
++import { MarketingHeader } from "@/components/marketing/MarketingHeader";
++import { Button } from "@/components/ui/button";
++import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
++import { cn } from "@/lib/utils";
++
++type Mode = "solo" | "team";
++
++interface Feature {
++  text: React.ReactNode;
++  dim?: boolean;
++}
++
++const FREE_FEATURES: Feature[] = [
++  { text: <><strong>Unlimited API resources</strong>, added manually</> },
++  { text: <>All <strong>22 widget types</strong> + AI suggestions</> },
++  { text: <>Up to <strong>2 projects</strong>, <strong>3 published dashboards</strong></> },
++  { text: "Public share links & password protection" },
++  { text: "Embed anywhere via iframe" },
++  { text: "Bulk import & SDK embed", dim: true },
++  { text: "Collaboration", dim: true },
++];
++
++const PAID_PLANS: Record<
++  Mode,
++  {
++    tile: string;
++    badge: string;
++    name: string;
++    sub: string;
++    price: string;
++    per: string;
++    note: string;
++    features: Feature[];
++    cta: string;
++  }
++> = {
++  solo: {
++    tile: "plan / pro",
++    badge: "most popular",
++    name: "Pro",
++    sub: "For the solo builder shipping serious dashboards — remove every limit.",
++    price: "$9",
++    per: "/ month",
++    note: "flat rate · cancel anytime",
++    features: [
++      { text: <><strong>Everything in Free</strong>, plus:</> },
++      { text: <><strong>Bulk import</strong> your API library — Postman, OpenAPI, cURL</> },
++      { text: <><strong>Unlimited projects</strong> & published dashboards</> },
++      { text: <><strong>Native JS / SDK embed</strong> — no iframes, feels built-in</> },
++      { text: "Collaboration — that's what Org is for →", dim: true },
++    ],
++    cta: "Go Pro",
++  },
++  team: {
++    tile: "plan / org",
++    badge: "for teams",
++    name: "Org",
++    sub: "One org for your whole team. Everyone builds together in shared projects.",
++    price: "$25",
++    per: "/ month",
++    note: "flat rate per org · unlimited members",
++    features: [
++      { text: <><strong>Everything in Pro</strong>, plus:</> },
++      { text: <><strong>Unlimited members</strong> — flat price, never per-seat</> },
++      { text: <><strong>Shared projects</strong> — everyone edits the same dashboards</> },
++      { text: <><strong>Roles</strong> — owner, editor, viewer per member</> },
++      { text: <>Create with your <strong>company email</strong> · invite anyone, any domain</> },
++    ],
++    cta: "Create your Org",
++  },
++};
++
++const RULES = [
++  {
++    k: "rule 01",
++    title: "Viewing is always free",
++    body: "Anyone can view a published dashboard on any plan — link, password, or iframe.",
++  },
++  {
++    k: "rule 02",
++    title: "Building together needs an Org",
++    body: "Two people can never edit the same project outside an Org. Solo plans are truly solo.",
++  },
++  {
++    k: "rule 03",
++    title: "One Org per domain included",
++    body: "Creating an Org requires a company email. Need a separate Org? Each one is its own $25/mo subscription.",
++  },
++];
++
++const COMPARE_ROWS: { feature: string; free: string; pro: string; org: string }[] = [
++  { feature: "Price", free: "$0", pro: "$9/mo", org: "$25/mo" },
++  { feature: "API resources (manual add)", free: "Unlimited", pro: "Unlimited", org: "Unlimited" },
++  { feature: "Widget types + AI suggestion", free: "All 22", pro: "All 22", org: "All 22" },
++  { feature: "Projects", free: "2", pro: "Unlimited", org: "Unlimited" },
++  { feature: "Published dashboards", free: "3", pro: "Unlimited", org: "Unlimited" },
++  { feature: "Public links & iframe embed", free: "✓", pro: "✓", org: "✓" },
++  { feature: "Bulk import (Postman / OpenAPI / cURL)", free: "—", pro: "✓", org: "✓" },
++  { feature: "JS / SDK embed", free: "—", pro: "✓", org: "✓" },
++  { feature: "Members", free: "1", pro: "1", org: "Unlimited" },
++  { feature: "Collaborate on projects", free: "—", pro: "—", org: "✓ org-wide" },
++  { feature: "Roles (owner / editor / viewer)", free: "—", pro: "—", org: "✓" },
++  { feature: "Org creation", free: "—", pro: "—", org: "Company email" },
++];
++
++function compareCellClass(value: string) {
++  if (value === "—") return "text-ink-3 opacity-45";
++  if (value.includes("✓") || value === "Unlimited" || value === "All 22") return "font-semibold text-brand-green";
++  return "";
++}
++
++function FeatureList({ features }: { features: Feature[] }) {
++  return (
++    <ul className="my-6 flex flex-1 flex-col gap-2.5">
++      {features.map((f, i) => (
++        <li
++          key={i}
++          className={cn(
++            "flex items-start gap-2.5 text-[14.5px] leading-[1.45]",
++            f.dim ? "text-ink-3 opacity-70" : "text-ink-2",
++          )}
++        >
++          {f.dim ? (
++            <X className="mt-0.5 h-3.5 w-3.5 shrink-0" />
++          ) : (
++            <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-brand-green" />
++          )}
++          <span>{f.text}</span>
++        </li>
++      ))}
++    </ul>
++  );
++}
++
++export default function PricingPage() {
++  const navigate = useNavigate();
++  const [mode, setMode] = React.useState<Mode>("solo");
++  const paid = PAID_PLANS[mode];
++
++  return (
++    <div className="min-h-screen bg-bg-0 text-ink-1">
++      <MarketingHeader />
++
++      <div className="mx-auto max-w-[1000px] px-6 pb-[100px] pt-[64px]">
++        <section className="pb-[52px] text-center">
++          <h1 className="font-display text-[34px] font-bold leading-[1.05] tracking-[-0.03em] sm:text-[56px]">
++            <span className="text-brand-violet-light">Free</span> to build.
++            <br />
++            <span className="text-brand-violet-light">Free</span> to share.
++          </h1>
++          <p className="mx-auto mt-4 max-w-[520px] text-[17px] leading-[1.55] text-ink-2">
++            Connect any API, build dashboards with AI-suggested widgets, and publish them to the world —
++            without paying a cent. Pay only to power up, or to build together.
++          </p>
++        </section>
++
++        <section className="grid grid-cols-1 items-stretch gap-[22px] md:grid-cols-2">
++          {/* Free — constant */}
++          <div className="flex flex-col overflow-hidden rounded-xl border border-border-default bg-bg-1 shadow-sm">
++            <div className="flex items-center justify-between border-b border-border-subtle bg-bg-2 px-[18px] py-[11px]">
++              <span className="font-mono text-[12px] uppercase tracking-[0.06em] text-ink-3">plan / free</span>
++              <span className="flex h-3.5 items-end gap-[2.5px]">
++                {[5, 9, 6, 12, 8].map((h, i) => (
++                  <i key={i} className="block w-[3.5px] rounded-[1px] bg-border-strong" style={{ height: h }} />
++                ))}
++              </span>
++            </div>
++            <div className="flex flex-1 flex-col p-[26px]">
++              <div className="font-display text-[24px] font-bold tracking-[-0.02em]">Free</div>
++              <p className="mt-[5px] min-h-[44px] text-[14.5px] leading-[1.5] text-ink-2">
++                Everything you need to build and publish real dashboards, solo.
++              </p>
++              <div className="mb-1 mt-5 flex items-baseline gap-[7px]">
++                <span className="font-mono text-[44px] font-semibold tracking-[-0.03em]">$0</span>
++                <span className="font-mono text-[14px] text-ink-3">/ forever</span>
++              </div>
++              <div className="min-h-[18px] font-mono text-[12px] text-ink-3">no card required</div>
++              <FeatureList features={FREE_FEATURES} />
++              <Button variant="outline" className="mt-auto w-full" onClick={() => navigate("/signup")}>
++                Start building
++              </Button>
++            </div>
++          </div>
++
++          {/* Paid — morphs between Pro and Org */}
++          <div
++            className="flex flex-col overflow-hidden rounded-xl border bg-bg-1"
++            style={{
++              borderColor: "var(--color-brand-violet)",
++              boxShadow: "0 0 0 1px var(--color-brand-violet), 0 12px 34px rgba(139,92,246,0.18)",
++            }}
++          >
++            <div className="flex items-center justify-between border-b border-border-subtle bg-bg-2 px-[18px] py-[11px]">
++              <span className="font-mono text-[12px] uppercase tracking-[0.06em] text-ink-3">{paid.tile}</span>
++              <span className="rounded-full bg-brand-violet/15 px-[9px] py-[3px] font-mono text-[10.5px] font-semibold uppercase tracking-[0.08em] text-brand-violet-light">
++                {paid.badge}
++              </span>
++            </div>
++
++            <div className="px-[18px] pt-4">
++              <div
++                role="tablist"
++                aria-label="Who is this plan for"
++                className="relative flex w-full rounded-[11px] border border-border-strong bg-bg-0 p-[3px]"
++              >
++                {(["solo", "team"] as Mode[]).map((m) => (
++                  <button
++                    key={m}
++                    role="tab"
++                    aria-selected={mode === m}
++                    onClick={() => setMode(m)}
++                    className={cn(
++                      "relative z-10 flex-1 cursor-pointer rounded-lg py-[9px] text-[13.5px] font-semibold transition-colors",
++                      mode === m ? "text-white" : "text-ink-2",
++                    )}
++                  >
++                    {m === "solo" ? "For individuals" : "For teams"}
++                    {mode === m && (
++                      <motion.span
++                        layoutId="pricing-toggle-thumb"
++                        transition={{ type: "spring", stiffness: 380, damping: 32 }}
++                        className="absolute inset-0 -z-10 rounded-lg bg-brand-violet"
++                      />
++                    )}
++                  </button>
++                ))}
++              </div>
++            </div>
++
++            <AnimatePresence mode="wait">
++              <motion.div
++                key={mode}
++                initial={{ opacity: 0, y: 8 }}
++                animate={{ opacity: 1, y: 0 }}
++                exit={{ opacity: 0, y: -8 }}
++                transition={{ duration: 0.22 }}
++                className="flex flex-1 flex-col p-[26px]"
++              >
++                <div className="font-display text-[24px] font-bold tracking-[-0.02em]">{paid.name}</div>
++                <p className="mt-[5px] min-h-[44px] text-[14.5px] leading-[1.5] text-ink-2">{paid.sub}</p>
++                <div className="mb-1 mt-5 flex items-baseline gap-[7px]">
++                  <span className="font-mono text-[44px] font-semibold tracking-[-0.03em]">{paid.price}</span>
++                  <span className="font-mono text-[14px] text-ink-3">{paid.per}</span>
++                </div>
++                <div className="min-h-[18px] font-mono text-[12px] text-ink-3">{paid.note}</div>
++                <FeatureList features={paid.features} />
++                <Button className="mt-auto w-full" onClick={() => navigate("/signup")}>
++                  {paid.cta}
++                </Button>
++              </motion.div>
++            </AnimatePresence>
++          </div>
++        </section>
++
++        <section className="mt-[46px] grid grid-cols-1 gap-4 sm:grid-cols-3">
++          {RULES.map((r) => (
++            <div key={r.k} className="rounded-xl border border-dashed border-border-strong bg-bg-1/70 p-4">
++              <div className="font-mono text-[11px] uppercase tracking-[0.07em] text-brand-violet-light">{r.k}</div>
++              <div className="mt-1 mb-0.5 text-[13px] font-semibold text-ink-1">{r.title}</div>
++              <div className="text-[13.5px] leading-[1.55] text-ink-2">{r.body}</div>
++            </div>
++          ))}
++        </section>
++
++        <section className="mt-[74px]">
++          <h2 className="font-display mb-7 text-center text-[26px] font-bold tracking-[-0.02em]">Compare plans</h2>
++          <Table>
++            <TableHeader>
++              <TableRow>
++                <TableHead>Feature</TableHead>
++                <TableHead className="text-center">Free</TableHead>
++                <TableHead className="text-center">Pro</TableHead>
++                <TableHead className="text-center">Org</TableHead>
++              </TableRow>
++            </TableHeader>
++            <TableBody>
++              {COMPARE_ROWS.map((row) => (
++                <TableRow key={row.feature}>
++                  <TableCell>{row.feature}</TableCell>
++                  <TableCell className={cn("text-center font-mono", compareCellClass(row.free))}>{row.free}</TableCell>
++                  <TableCell className={cn("text-center font-mono", compareCellClass(row.pro))}>{row.pro}</TableCell>
++                  <TableCell className={cn("text-center font-mono", compareCellClass(row.org))}>{row.org}</TableCell>
++                </TableRow>
++              ))}
++            </TableBody>
++          </Table>
++        </section>
++
++        <footer className="mt-[70px] text-center font-mono text-[13px] text-ink-3">
++          free to build · free to share · pay to power up · pay to build together
++        </footer>
++      </div>
++    </div>
++  );
++}
+diff --git a/apps/web/src/pages/PrivacyPolicyPage.tsx b/apps/web/src/pages/PrivacyPolicyPage.tsx
+new file mode 100644
+index 0000000..f40125f
+--- /dev/null
++++ b/apps/web/src/pages/PrivacyPolicyPage.tsx
+@@ -0,0 +1,222 @@
++import { LegalDoc } from "@/components/marketing/LegalDoc";
++
++export default function PrivacyPolicyPage() {
++  return (
++    <LegalDoc
++      eyebrow="legal / privacy"
++      title="Privacy Policy"
++      updated="[DATE]"
++      crossLink={{ label: "Terms of Service", to: "/terms" }}
++      notice={
++        <>
++          Template notice: this document is a starting draft, not legal advice. Confirm every disclosure
++          matches your live infrastructure, fill in the [BRACKETED] placeholders, and have it reviewed by a
++          qualified lawyer — especially if you serve users in the EU/EEA, UK, or California.
++        </>
++      }
++    >
++      <h2>1. Who We Are</h2>
++      <p>
++        AiDi Studio ("we", "us") is operated by [LEGAL NAME], [ADDRESS / COUNTRY]. This policy explains what
++        personal data we collect when you use AiDi Studio, why, and the choices you have. Contact:{" "}
++        <a href="mailto:[PRIVACY EMAIL]">[PRIVACY EMAIL]</a>.
++      </p>
++
++      <h2>2. Data We Collect</h2>
++      <table>
++        <thead>
++          <tr>
++            <th>Category</th>
++            <th>Examples</th>
++            <th>Why</th>
++          </tr>
++        </thead>
++        <tbody>
++          <tr>
++            <td>
++              <strong>Account data</strong>
++            </td>
++            <td>Email address, display name, hashed password (managed by our auth provider)</td>
++            <td>Sign-in, account recovery, service emails</td>
++          </tr>
++          <tr>
++            <td>
++              <strong>Org data</strong>
++            </td>
++            <td>Org name, member emails, roles, verified email domain</td>
++            <td>Team collaboration and access control</td>
++          </tr>
++          <tr>
++            <td>
++              <strong>API Resource configuration</strong>
++            </td>
++            <td>Resource names, endpoint URLs, auth type, and the API credentials/tokens you save</td>
++            <td>Fetching your APIs on your behalf to render widgets</td>
++          </tr>
++          <tr>
++            <td>
++              <strong>Your Content</strong>
++            </td>
++            <td>Projects, widgets, dashboard layouts, publish settings, share passwords</td>
++            <td>Providing the core product</td>
++          </tr>
++          <tr>
++            <td>
++              <strong>Fetched API data</strong>
++            </td>
++            <td>Responses returned by the APIs you connect</td>
++            <td>
++              Rendered to display your widgets; proxied live, not stored as a copy of record [CONFIRM if
++              caching is added later]
++            </td>
++          </tr>
++          <tr>
++            <td>
++              <strong>Billing data</strong>
++            </td>
++            <td>Plan, subscription status; card details are collected and stored by Stripe, never by us</td>
++            <td>Payments for Pro / Org plans</td>
++          </tr>
++          <tr>
++            <td>
++              <strong>Technical data</strong>
++            </td>
++            <td>IP address, browser type, request logs</td>
++            <td>Security, rate limiting, debugging</td>
++          </tr>
++        </tbody>
++      </table>
++      <p>
++        We do not intentionally collect special-category data. Do not connect APIs containing data you are
++        not permitted to process, and avoid storing broad-scope credentials with us.
++      </p>
++
++      <h2>3. How We Use Data</h2>
++      <ul>
++        <li>To provide, secure, and improve the Service (legal basis: contract performance and legitimate interests).</li>
++        <li>To process payments and manage subscriptions (contract performance).</li>
++        <li>
++          To send transactional emails — verification, password reset, billing notices (contract
++          performance). We do not send marketing email without separate consent.
++        </li>
++        <li>To comply with law and enforce our Terms (legal obligation / legitimate interests).</li>
++      </ul>
++      <p>We do not sell personal data, and we do not use Your Content or your API data to train AI models.</p>
++
++      <h2>4. AI Features — What Leaves Our Systems</h2>
++      <p>
++        When you request an AI widget suggestion, we send a <strong>sample of the selected API Resource's
++        response</strong> (plus the resource's name and field structure) to our AI inference provider,{" "}
++        <strong>Groq, Inc.</strong>, to generate a widget-type and field-mapping suggestion. This happens only
++        when you trigger the suggestion feature. If no AI key is configured or the AI call fails, a
++        deterministic on-server fallback runs instead and nothing is sent to Groq. The Service always labels
++        which path produced a suggestion. Per Groq's API terms, submitted data is used to provide the
++        inference service; review Groq's current data-use terms at their site. Do not use the AI suggestion
++        feature on API responses containing personal or confidential data you cannot share with a processor.
++      </p>
++
++      <h2>5. Service Providers (Sub-processors)</h2>
++      <table>
++        <thead>
++          <tr>
++            <th>Provider</th>
++            <th>Role</th>
++            <th>Data involved</th>
++          </tr>
++        </thead>
++        <tbody>
++          <tr>
++            <td>Supabase</td>
++            <td>Database &amp; authentication</td>
++            <td>Account data, Org data, Your Content, API Resource configuration (incl. stored credentials)</td>
++          </tr>
++          <tr>
++            <td>Vercel</td>
++            <td>Application hosting &amp; CDN</td>
++            <td>Technical data (IPs, request logs); all traffic transits their infrastructure</td>
++          </tr>
++          <tr>
++            <td>Groq</td>
++            <td>AI inference (widget suggestions)</td>
++            <td>API response samples you submit for suggestion (see §4)</td>
++          </tr>
++          <tr>
++            <td>Stripe</td>
++            <td>Payment processing</td>
++            <td>Billing details, card data (held by Stripe under their own policy)</td>
++          </tr>
++          <tr>
++            <td>[EMAIL PROVIDER, e.g. Resend]</td>
++            <td>Transactional email</td>
++            <td>Email address, message content</td>
++          </tr>
++        </tbody>
++      </table>
++      <p>
++        These providers may store data in the United States or other countries. Where required, transfers
++        rely on appropriate safeguards such as Standard Contractual Clauses. [CONFIRM your Supabase project
++        region and state it here, e.g., "Our primary database is hosted in the AWS ___ region."]
++      </p>
++
++      <h2>6. Published Dashboards Are Public</h2>
++      <p>
++        When you publish a dashboard, anyone with the link (and password, if you set one) can view it —
++        including any data your connected APIs return to it. Embedded dashboards are visible on the sites you
++        embed them into. Publishing is your choice and your responsibility; unpublishing removes public access
++        but copies already viewed by others cannot be recalled.
++      </p>
++
++      <h2>7. Retention</h2>
++      <ul>
++        <li>
++          Account data and Your Content: kept while your account is active; deleted within [30] days of
++          account deletion, except minimal records we must keep (e.g., invoices, for tax law).
++        </li>
++        <li>API credentials: deleted immediately when you remove the resource or your account.</li>
++        <li>Server logs: retained up to [30–90] days for security and debugging.</li>
++        <li>Billing records: retained as required by tax and accounting law.</li>
++      </ul>
++
++      <h2>8. Security</h2>
++      <p>
++        Data in transit is encrypted with TLS; data at rest is encrypted by our database provider. Access to
++        production systems is restricted to the operator. API credentials are stored for the sole purpose of
++        fetching your resources — grant tokens with the narrowest possible scope. No system is perfectly
++        secure; if a breach affecting your personal data occurs, we will notify you as required by law.
++      </p>
++
++      <h2>9. Your Rights</h2>
++      <p>
++        Depending on where you live (including under the GDPR, UK GDPR, India's DPDP Act, or the CCPA), you
++        may have the right to access, correct, export, delete, or restrict the processing of your personal
++        data, and to object to certain processing. You can delete your account and content from Settings, or
++        exercise any right by emailing <a href="mailto:[PRIVACY EMAIL]">[PRIVACY EMAIL]</a>. You also have
++        the right to complain to your local data-protection authority.
++      </p>
++
++      <h2>10. Cookies</h2>
++      <p>
++        We use only strictly necessary cookies/local storage: your session token and interface preferences.
++        We do not use advertising or cross-site tracking cookies. [UPDATE this section if you add analytics —
++        name the tool and its cookies.]
++      </p>
++
++      <h2>11. Children</h2>
++      <p>
++        The Service is not directed to children under 16, and we do not knowingly collect their data. If you
++        believe a child has provided us personal data, contact us and we will delete it.
++      </p>
++
++      <h2>12. Changes</h2>
++      <p>
++        We will post any changes here and update the date above; for material changes we will notify you by
++        email or in-app at least 14 days in advance.
++      </p>
++
++      <h2>13. Contact</h2>
++      <p>
++        Privacy questions or requests: <a href="mailto:[PRIVACY EMAIL]">[PRIVACY EMAIL]</a>.
++      </p>
++    </LegalDoc>
++  );
++}
+diff --git a/apps/web/src/pages/TermsPage.tsx b/apps/web/src/pages/TermsPage.tsx
+new file mode 100644
+index 0000000..41241b3
+--- /dev/null
++++ b/apps/web/src/pages/TermsPage.tsx
+@@ -0,0 +1,174 @@
++import { LegalDoc } from "@/components/marketing/LegalDoc";
++
++export default function TermsPage() {
++  return (
++    <LegalDoc
++      eyebrow="legal / terms"
++      title="Terms of Service"
++      updated="[DATE]"
++      crossLink={{ label: "Privacy Policy", to: "/privacy" }}
++      notice={
++        <>
++          Template notice: this document is a starting draft, not legal advice. Have it reviewed by a
++          qualified lawyer in your jurisdiction before publishing, and fill in every [BRACKETED] placeholder.
++        </>
++      }
++    >
++      <h2>1. Agreement</h2>
++      <p>
++        These Terms of Service ("Terms") govern your use of AiDi Studio (the "Service"), operated by [LEGAL
++        NAME / SOLE PROPRIETOR NAME] ("we", "us"). By creating an account or using the Service, you agree to
++        these Terms. If you are using the Service on behalf of an organization, you confirm you have
++        authority to bind that organization.
++      </p>
++
++      <h2>2. The Service</h2>
++      <p>
++        AiDi Studio lets you connect external APIs ("API Resources"), build dashboards and widgets from their
++        data, and publish or embed those dashboards. Some features use AI models to suggest widget
++        configurations. We may add, change, or remove features at any time; if a change materially reduces a
++        paid feature you rely on, you may cancel and receive a pro-rated refund for the unused period.
++      </p>
++
++      <h2>3. Accounts &amp; Organizations</h2>
++      <ul>
++        <li>
++          You must provide accurate account information and keep your credentials secure. You are responsible
++          for activity under your account.
++        </li>
++        <li>
++          Creating an Organization ("Org") requires a company-domain email address. One Org may be created per
++          verified domain per subscription; each additional Org requires its own subscription.
++        </li>
++        <li>
++          Org owners control membership and roles. Content created inside an Org belongs to the Org's
++          subscription holder for administrative purposes.
++        </li>
++        <li>You must be at least 16 years old (or the age of digital consent in your country) to use the Service.</li>
++      </ul>
++
++      <h2>4. Plans, Billing &amp; Cancellation</h2>
++      <ul>
++        <li>
++          <strong>Free</strong> includes limited projects and published dashboards as described on the
++          pricing page.
++        </li>
++        <li>
++          <strong>Pro ($9/month)</strong> and <strong>Org ($25/month per Org)</strong> are billed in advance
++          on a monthly cycle via our payment processor (Stripe). Prices exclude applicable taxes.
++        </li>
++        <li>
++          You can cancel anytime; access continues until the end of the paid period. Downgrading may
++          re-apply Free-tier limits — content over the limit is retained but may become read-only until you
++          reduce usage or resubscribe.
++        </li>
++        <li>We may change prices with at least 30 days' notice; changes apply from your next billing cycle.</li>
++      </ul>
++
++      <h2>5. Your Content &amp; API Credentials</h2>
++      <ul>
++        <li>
++          You retain all rights to the dashboards, widgets, and configurations you create, and to the data
++          returned by your API Resources ("Your Content"). We claim no ownership of it.
++        </li>
++        <li>
++          You grant us a limited license to host, process, display, and transmit Your Content solely to
++          operate the Service — including fetching your API Resources on your behalf and rendering public
++          dashboards you choose to publish.
++        </li>
++        <li>You are responsible for having the right to connect any API you add, including complying with that API provider's terms.</li>
++        <li>
++          API credentials you store with us are used only to fetch your resources. Keep the scope of any
++          tokens you provide as narrow as possible.
++        </li>
++      </ul>
++
++      <h2>6. AI Features</h2>
++      <p>
++        When you request an AI widget suggestion, a sample of the selected API Resource's response is sent to
++        a third-party AI provider to generate the suggestion. Suggestions are automated guesses and may be
++        wrong; review them before relying on them. If AI is unavailable, a deterministic (non-AI) fallback is
++        used, and the Service labels which one produced the result. Do not use the AI features to process
++        data you are not permitted to share with a processor (see the Privacy Policy for details).
++      </p>
++
++      <h2>7. Published &amp; Embedded Dashboards</h2>
++      <ul>
++        <li>
++          Publishing a dashboard makes it accessible to anyone with the link (and password, if set). You are
++          solely responsible for what you publish and for any data it exposes.
++        </li>
++        <li>
++          Embedding (iframe or SDK) places your dashboard on third-party sites you control or are permitted to
++          use. You are responsible for compliance on those sites.
++        </li>
++        <li>We may unpublish content that violates these Terms or applicable law.</li>
++      </ul>
++
++      <h2>8. Acceptable Use</h2>
++      <p>You agree not to:</p>
++      <ul>
++        <li>use the Service to violate any law, third-party right, or API provider's terms;</li>
++        <li>
++          publish dashboards containing unlawful, infringing, or deceptive content, or personal data you have
++          no right to display;
++        </li>
++        <li>
++          probe, overload, or disrupt the Service, other users, or the APIs you connect (including using us
++          to circumvent an API's rate limits or access controls);
++        </li>
++        <li>attempt to access other users' accounts, data, or non-public areas of the Service;</li>
++        <li>resell or white-label the Service itself without our written permission (embedding your own dashboards is of course allowed).</li>
++      </ul>
++
++      <h2>9. Availability &amp; Support</h2>
++      <p>
++        The Service is provided on an "as available" basis without an uptime guarantee. We rely on
++        third-party infrastructure (hosting, database, AI, and payment providers) and are not liable for
++        their outages. Support is provided on a reasonable-efforts basis via [SUPPORT EMAIL].
++      </p>
++
++      <h2>10. Disclaimers</h2>
++      <p>
++        THE SERVICE IS PROVIDED "AS IS" AND "AS AVAILABLE", WITHOUT WARRANTIES OF ANY KIND, EXPRESS OR
++        IMPLIED, INCLUDING FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT. Dashboards visualize data
++        from APIs you choose; we do not verify the accuracy of that data and it must not be your sole basis
++        for financial, medical, legal, or other consequential decisions.
++      </p>
++
++      <h2>11. Limitation of Liability</h2>
++      <p>
++        TO THE MAXIMUM EXTENT PERMITTED BY LAW, WE WILL NOT BE LIABLE FOR INDIRECT, INCIDENTAL, SPECIAL,
++        CONSEQUENTIAL, OR EXEMPLARY DAMAGES, OR FOR LOST PROFITS, DATA, OR GOODWILL. OUR TOTAL LIABILITY FOR
++        ANY CLAIM IS LIMITED TO THE AMOUNTS YOU PAID US IN THE 12 MONTHS BEFORE THE CLAIM AROSE (OR $50 IF YOU
++        PAID NOTHING). Some jurisdictions do not allow certain limitations, so parts of this section may not
++        apply to you.
++      </p>
++
++      <h2>12. Termination</h2>
++      <p>
++        You may delete your account at any time from Settings. We may suspend or terminate accounts that
++        violate these Terms, with notice where practicable. On termination we will make Your Content
++        available for export for [30] days unless legal reasons prevent it.
++      </p>
++
++      <h2>13. Changes to These Terms</h2>
++      <p>
++        We may update these Terms. For material changes we will give at least 14 days' notice by email or
++        in-app. Continued use after the effective date constitutes acceptance.
++      </p>
++
++      <h2>14. Governing Law</h2>
++      <p>
++        These Terms are governed by the laws of [JURISDICTION, e.g., India], without regard to conflict-of-law
++        rules. Courts of [CITY/STATE] have exclusive jurisdiction, except where mandatory consumer law in your
++        country provides otherwise.
++      </p>
++
++      <h2>15. Contact</h2>
++      <p>
++        Questions about these Terms: <a href="mailto:[SUPPORT EMAIL]">[SUPPORT EMAIL]</a>.
++      </p>
++    </LegalDoc>
++  );
++}
+-- 
+2.43.0
+
+
+From e6d327735d7b82f27081157346fbc69f40fcd62f Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 15 Jul 2026 10:26:08 +0000
+Subject: [PATCH 2/2] Fix scroll-to-top on navigation, drop template notices,
+ sync landing pricing
+
+- Add a ScrollToTop route listener so navigating to a new page always
+  lands at the top instead of keeping the previous page's scroll offset.
+- Remove the "Template notice" disclaimer boxes and the embedded
+  [CONFIRM ...] / [UPDATE this section ...] drafting asides from the
+  Privacy Policy and Terms pages; real placeholders like [DATE] and
+  [PRIVACY EMAIL] are kept as-is.
+- Replace the landing page's placeholder Free/Pro/Team/Enterprise tiers
+  with the actual Free ($0) / Pro ($9) / Org ($25) plans from the
+  dedicated pricing page, plus a link through to the full comparison.
+
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01WK21zjTd6ZeibVA7s3spE6
+---
+ apps/web/src/App.tsx                          | 13 ++++++-
+ .../web/src/components/marketing/LegalDoc.tsx | 10 +----
+ apps/web/src/pages/LandingPage.tsx            | 37 ++++++++++---------
+ apps/web/src/pages/PrivacyPolicyPage.tsx      | 18 ++-------
+ apps/web/src/pages/TermsPage.tsx              |  6 ---
+ 5 files changed, 37 insertions(+), 47 deletions(-)
+
+diff --git a/apps/web/src/App.tsx b/apps/web/src/App.tsx
+index 433e2b7..cf4b553 100644
+--- a/apps/web/src/App.tsx
++++ b/apps/web/src/App.tsx
+@@ -1,5 +1,5 @@
+ import * as React from "react";
+-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
++import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
+ import { RequireAuth, PublicOnly } from "@/routes/guards";
+ import { ToastViewport } from "@/components/ui/toast";
+ import { useAppSelector } from "@/store/hooks";
+@@ -37,10 +37,21 @@ function ThemeEffect() {
+   return null;
+ }
+ 
++/** Resets scroll to the top of the page on every route change — without this, navigating
++ * to a new page keeps the scroll offset from wherever the previous page was left. */
++function ScrollToTop() {
++  const { pathname } = useLocation();
++  React.useEffect(() => {
++    window.scrollTo(0, 0);
++  }, [pathname]);
++  return null;
++}
++
+ function App() {
+   return (
+     <BrowserRouter>
+       <ThemeEffect />
++      <ScrollToTop />
+       <Routes>
+         <Route path="/" element={<Navigate to="/landing" replace />} />
+ 
+diff --git a/apps/web/src/components/marketing/LegalDoc.tsx b/apps/web/src/components/marketing/LegalDoc.tsx
+index 57fa733..6fd1d96 100644
+--- a/apps/web/src/components/marketing/LegalDoc.tsx
++++ b/apps/web/src/components/marketing/LegalDoc.tsx
+@@ -3,19 +3,17 @@ import { Link } from "react-router-dom";
+ import { MarketingHeader } from "@/components/marketing/MarketingHeader";
+ 
+ /** Shared chrome for the Privacy Policy and Terms of Service pages — both documents share
+- * the same eyebrow/title/updated-date/notice layout, just with different body sections. */
++ * the same eyebrow/title/updated-date layout, just with different body sections. */
+ export function LegalDoc({
+   eyebrow,
+   title,
+   updated,
+-  notice,
+   crossLink,
+   children,
+ }: {
+   eyebrow: string;
+   title: string;
+   updated: string;
+-  notice: React.ReactNode;
+   crossLink: { label: string; to: string };
+   children: React.ReactNode;
+ }) {
+@@ -33,11 +31,7 @@ export function LegalDoc({
+           </h1>
+           <div className="mt-2 font-mono text-[13px] text-ink-3">Last updated: {updated}</div>
+ 
+-          <div className="mt-8 rounded-lg border border-dashed border-border-strong border-l-[3px] border-l-brand-violet bg-brand-violet/5 px-[18px] py-3.5 text-[13.5px] leading-[1.6] text-ink-2">
+-            {notice}
+-          </div>
+-
+-          <div className="legal-doc mt-6">{children}</div>
++          <div className="legal-doc mt-8">{children}</div>
+         </article>
+ 
+         <div className="mt-8 text-center font-mono text-[13px] text-ink-3">
+diff --git a/apps/web/src/pages/LandingPage.tsx b/apps/web/src/pages/LandingPage.tsx
+index b7ae7c9..62da469 100644
+--- a/apps/web/src/pages/LandingPage.tsx
++++ b/apps/web/src/pages/LandingPage.tsx
+@@ -126,28 +126,25 @@ const PLANS = [
+   {
+     name: "Free",
+     price: "$0",
+-    tagline: "Kick the tires",
+-    features: ["1 project", "3 dashboards", "10 widgets"],
++    per: "/ forever",
++    tagline: "Build and publish, solo",
++    features: ["2 projects, 3 published dashboards", "All 22 widget types + AI suggestions", "Public share links & iframe embed"],
+   },
+   {
+     name: "Pro",
+-    price: "$29",
+-    tagline: "For growing teams",
+-    features: ["5 projects", "Unlimited dashboards", "Unlimited widgets"],
++    price: "$9",
++    per: "/ month",
++    tagline: "For the solo builder",
++    features: ["Unlimited projects & dashboards", "Bulk import — Postman, OpenAPI, cURL", "Native JS / SDK embed"],
+     highlight: true,
+     badge: "Most popular",
+   },
+   {
+-    name: "Team",
+-    price: "$49",
+-    tagline: "Built for collaboration",
+-    features: ["Unlimited projects", "Role-based access", "Priority support"],
+-  },
+-  {
+-    name: "Enterprise",
+-    price: "Custom",
+-    tagline: "Security & scale",
+-    features: ["SSO/SAML", "Audit logs", "Dedicated support"],
++    name: "Org",
++    price: "$25",
++    per: "/ month",
++    tagline: "One org, unlimited members",
++    features: ["Everything in Pro", "Unlimited members, flat price", "Shared projects & roles"],
+   },
+ ];
+ 
+@@ -923,7 +920,7 @@ export default function LandingPage() {
+           </div>
+           <div className="font-display text-[32px] font-bold">Start free, upgrade when you outgrow it</div>
+         </motion.div>
+-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4 lg:items-center">
++        <div className="grid grid-cols-1 gap-5 sm:grid-cols-3 lg:items-center">
+           {PLANS.map((pl) => (
+             <motion.div
+               key={pl.name}
+@@ -951,7 +948,7 @@ export default function LandingPage() {
+               <div className="mt-1 text-[11px] text-ink-3">{pl.tagline}</div>
+               <div className="font-display my-3 text-[28px] font-extrabold text-ink-1">
+                 {pl.price}
+-                {pl.price !== "Custom" && <span className="text-[12px] font-normal text-ink-3">/seat</span>}
++                <span className="text-[12px] font-normal text-ink-3">{pl.per}</span>
+               </div>
+               <div className="flex flex-col gap-2">
+                 {pl.features.map((feat) => (
+@@ -963,6 +960,12 @@ export default function LandingPage() {
+             </motion.div>
+           ))}
+         </div>
++        <motion.div variants={fadeUp} className="mt-9 text-center">
++          <Button variant="outline" onClick={() => navigate("/pricing")} className="group px-[22px] py-[11px] text-[13px]">
++            Compare all plans in detail
++            <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
++          </Button>
++        </motion.div>
+       </motion.div>
+ 
+       <motion.div
+diff --git a/apps/web/src/pages/PrivacyPolicyPage.tsx b/apps/web/src/pages/PrivacyPolicyPage.tsx
+index f40125f..8fe1bdd 100644
+--- a/apps/web/src/pages/PrivacyPolicyPage.tsx
++++ b/apps/web/src/pages/PrivacyPolicyPage.tsx
+@@ -7,13 +7,6 @@ export default function PrivacyPolicyPage() {
+       title="Privacy Policy"
+       updated="[DATE]"
+       crossLink={{ label: "Terms of Service", to: "/terms" }}
+-      notice={
+-        <>
+-          Template notice: this document is a starting draft, not legal advice. Confirm every disclosure
+-          matches your live infrastructure, fill in the [BRACKETED] placeholders, and have it reviewed by a
+-          qualified lawyer — especially if you serve users in the EU/EEA, UK, or California.
+-        </>
+-      }
+     >
+       <h2>1. Who We Are</h2>
+       <p>
+@@ -65,10 +58,7 @@ export default function PrivacyPolicyPage() {
+               <strong>Fetched API data</strong>
+             </td>
+             <td>Responses returned by the APIs you connect</td>
+-            <td>
+-              Rendered to display your widgets; proxied live, not stored as a copy of record [CONFIRM if
+-              caching is added later]
+-            </td>
++            <td>Rendered to display your widgets; proxied live, not stored as a copy of record</td>
+           </tr>
+           <tr>
+             <td>
+@@ -154,8 +144,7 @@ export default function PrivacyPolicyPage() {
+       </table>
+       <p>
+         These providers may store data in the United States or other countries. Where required, transfers
+-        rely on appropriate safeguards such as Standard Contractual Clauses. [CONFIRM your Supabase project
+-        region and state it here, e.g., "Our primary database is hosted in the AWS ___ region."]
++        rely on appropriate safeguards such as Standard Contractual Clauses.
+       </p>
+ 
+       <h2>6. Published Dashboards Are Public</h2>
+@@ -197,8 +186,7 @@ export default function PrivacyPolicyPage() {
+       <h2>10. Cookies</h2>
+       <p>
+         We use only strictly necessary cookies/local storage: your session token and interface preferences.
+-        We do not use advertising or cross-site tracking cookies. [UPDATE this section if you add analytics —
+-        name the tool and its cookies.]
++        We do not use advertising or cross-site tracking cookies.
+       </p>
+ 
+       <h2>11. Children</h2>
+diff --git a/apps/web/src/pages/TermsPage.tsx b/apps/web/src/pages/TermsPage.tsx
+index 41241b3..af13b4c 100644
+--- a/apps/web/src/pages/TermsPage.tsx
++++ b/apps/web/src/pages/TermsPage.tsx
+@@ -7,12 +7,6 @@ export default function TermsPage() {
+       title="Terms of Service"
+       updated="[DATE]"
+       crossLink={{ label: "Privacy Policy", to: "/privacy" }}
+-      notice={
+-        <>
+-          Template notice: this document is a starting draft, not legal advice. Have it reviewed by a
+-          qualified lawyer in your jurisdiction before publishing, and fill in every [BRACKETED] placeholder.
+-        </>
+-      }
+     >
+       <h2>1. Agreement</h2>
+       <p>
+-- 
+2.43.0
+
